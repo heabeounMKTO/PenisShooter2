@@ -22,12 +22,19 @@ public class PlayerController : MonoBehaviourPunCallbacks
     public LayerMask groundLayer;
     private Camera FPScam;
     public float jumpForce = 3f, gravityMod = 2f;
+    public GameObject bulletImpact;
+    public GameObject gun;
+
 
     void Start()
     {
         Cursor.lockState = CursorLockMode.Locked;
 
         FPScam = Camera.main;
+    
+        
+        
+    
     }
      void Update()
     {
@@ -45,7 +52,7 @@ public class PlayerController : MonoBehaviourPunCallbacks
             Shoot();
         }
 
-
+        gun.transform.rotation = FPScam.transform.rotation;
         // if(Input.GetKeyDown(KeyCode.Escape)){
         //     Cursor.lockState = CursorLockMode.None;
         // }
@@ -131,6 +138,7 @@ public class PlayerController : MonoBehaviourPunCallbacks
         if(Physics.Raycast(ray, out RaycastHit hit)){
 
             Debug.Log("hit " + hit.collider.gameObject.name);
+            Instantiate(bulletImpact, hit.point + (hit.normal * 0.002f), Quaternion.LookRotation(hit.normal, Vector3.up));
 
         }
     }

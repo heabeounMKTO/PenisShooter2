@@ -63,6 +63,9 @@ MonoBehaviour:
     m_Bits: 8
   jumpForce: 3
   gravityMod: 2
+  bulletImpact: {fileID: 6276032232285848810, guid: d831c41b76b72a7489b948a26c3aa097,
+    type: 3}
+  gun: {fileID: 161168305051878551}
 --- !u!143 &1222118556658932646
 CharacterController:
   m_ObjectHideFlags: 0
@@ -4434,6 +4437,12 @@ PrefabInstance:
 --- !u!4 &159527760464178195 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4166463531722480, guid: 8d43e76b346f2f8448846e9211629d15,
+    type: 3}
+  m_PrefabInstance: {fileID: 159891836758969059}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &161168305051878551 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1294672646082164, guid: 8d43e76b346f2f8448846e9211629d15,
     type: 3}
   m_PrefabInstance: {fileID: 159891836758969059}
   m_PrefabAsset: {fileID: 0}

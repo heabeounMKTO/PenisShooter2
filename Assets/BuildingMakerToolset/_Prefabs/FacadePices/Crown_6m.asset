@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: Crown_6m
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 6683693488326297665, guid: 101cde83339a6c94382514a2ed4f027a, type: 3}
+  - {fileID: 6683693488326297665, guid: c69e0c2237381f341920e903d554bf0f, type: 3}
+  - {fileID: 6683693488326297665, guid: b9e7d66053e6508468d3399dc99be8bf, type: 3}

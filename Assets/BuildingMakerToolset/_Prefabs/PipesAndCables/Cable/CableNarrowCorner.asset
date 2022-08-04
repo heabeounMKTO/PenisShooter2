@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: CableNarrowCorner
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 3228644915112790479, guid: 3f0abb6f2865ea34c909869ef6afddaf, type: 3}
+  - {fileID: 6318238572919734786, guid: 255660414854bf84f878b357a47defc9, type: 3}
+  - {fileID: 8266925027123043281, guid: bb9a13af643de2b47abf8f33f2a23ee3, type: 3}
+  - {fileID: 2116176003500721586, guid: 7fb54bab70ce7fe47a70c4ba52898834, type: 3}

@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: DoubleDoors
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 174636868539840504, guid: 6a51155b437af8449a7433818f9467de, type: 3}
+  - {fileID: 119077084943737766, guid: 8ff9dc62469d03f4ca92c649f354f84f, type: 3}
+  - {fileID: 4501123341229366774, guid: e441755fea3bd6c4095325e22fd22b43, type: 3}
+  - {fileID: 7356208954978358025, guid: 3f39a352b833a8442bcf6a37f0aa7d9e, type: 3}
+  - {fileID: 7636105757652019707, guid: 4ea63dbe2db07214180302c352d93bc4, type: 3}
+  - {fileID: 1500073883716119449, guid: 41871147dea84344c9b672326544cf0a, type: 3}
+  - {fileID: 1144388743946590601, guid: a85a0a0b9ea3f9042a0945dfe8f8d968, type: 3}
+  - {fileID: 2660501368289232342, guid: 7e7f6bf7199faa64dabf91af2fdf496a, type: 3}
+  - {fileID: 5778911158081383479, guid: ba32089186f52c64bb967d93599dd4cf, type: 3}
+  - {fileID: 8380616683978410458, guid: cfced7948111c8c4cbd15528541271f5, type: 3}
+  - {fileID: 8520990483393375187, guid: be403288d4d17424c8669f1df12d303d, type: 3}
+  - {fileID: 1803335300689493018, guid: 5c3b91dc01e6a8e40bcfc8bc7af8da1f, type: 3}
+  - {fileID: 174636868539840504, guid: 9f0611d9dc9e0db49862f56cba8c8970, type: 3}

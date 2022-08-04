@@ -1,0 +1,13 @@
+fileFormatVersion: 2
+guid: b2bbcdb647729af4b80aa1cc90fd06b4
+labels:
+- Architecture
+- Building
+- Interior
+- Wall
+- Window
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

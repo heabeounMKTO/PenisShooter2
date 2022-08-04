@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: Railing_0
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 8206544208856572519, guid: 6db5646d8e9c64a4a9b09adefb706177, type: 3}
+  - {fileID: 8505882038445051324, guid: 697c33d1d19751949bcf1b094b0838cd, type: 3}
+  - {fileID: 4795494507857446328, guid: 770b09f76c068e8449bd04384c3752f7, type: 3}
+  - {fileID: 8642347095240851386, guid: f16963976ce7a3d4eb6f1c34e9e52641, type: 3}
+  - {fileID: 4817166687009672900, guid: d4f51ae837d86f9428c31ac5f84adfe3, type: 3}

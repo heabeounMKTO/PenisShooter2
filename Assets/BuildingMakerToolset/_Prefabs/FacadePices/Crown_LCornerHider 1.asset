@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: Crown_LCornerHider 1
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 159661457267635759, guid: ff016a2a798c0c04c900faa196d14167, type: 3}
+  - {fileID: 159661457267635759, guid: 88f99c5e4ab12e34e8792f20eb54fd13, type: 3}
+  - {fileID: 159661457267635759, guid: 349e2fcf538d010409c324f17676ad74, type: 3}

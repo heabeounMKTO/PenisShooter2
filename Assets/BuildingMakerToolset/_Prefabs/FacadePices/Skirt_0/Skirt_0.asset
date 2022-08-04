@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: Skirt_0
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 5651735061644208831, guid: e169f53af060d054db1cbdd7d2187eea, type: 3}
+  - {fileID: 8446970482661143787, guid: 2fa5662c1dd37ae4f894a7a5a214cb67, type: 3}
+  - {fileID: 4339782624061739958, guid: 912f661ba11b91f4f95722b307125f46, type: 3}
+  - {fileID: 186155673735263693, guid: 8eed147c06f15c44e929bd163bda84f5, type: 3}
+  - {fileID: 3418359564646856383, guid: 4ba01f8945a439947999654d3ce0f61a, type: 3}
+  - {fileID: 3292499224393204838, guid: ae02f1934362d714b9485547df2be743, type: 3}
+  - {fileID: 7953160123131474538, guid: b7b438582ed5ba94784f0af2f4681ce4, type: 3}
+  - {fileID: 1882341141900014007, guid: 827b7523a3c275749a102c2f88269cf0, type: 3}
+  - {fileID: 2659284256894477562, guid: 1fc3bd6e6ea654646afbc9aef0e71595, type: 3}
+  - {fileID: 6306141934551401928, guid: e1851d5d0e279374f8dcea68f1545b9e, type: 3}

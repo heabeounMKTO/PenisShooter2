@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: CableWideCorner
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 3651322793619343102, guid: c298a5553d8743a49b5d2f5e61377487, type: 3}
+  - {fileID: 4739393639401487224, guid: 871f226b7f6c27240b4accd11db4b970, type: 3}
+  - {fileID: 7756996790935133116, guid: 57de9068a05deea43a2b2f2797b5ae65, type: 3}
+  - {fileID: 8991096610804198458, guid: a050c7f5cc4463048bb037a63522985f, type: 3}

@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: DrainPipeOtherStuff
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 301263261162813450, guid: 48be7a71a39a5224293633ee73239a77, type: 3}
+  - {fileID: 2153865356361958674, guid: 62ab393d6f238dd41ab8c6046b9b0a77, type: 3}
+  - {fileID: 4356689250627352727, guid: cefc3f44347ea3c4d8efb229eaabc4cf, type: 3}
+  - {fileID: 302231003543605627, guid: 3e2db298c34835947a307e9acedf4092, type: 3}

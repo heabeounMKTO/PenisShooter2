@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: Cable
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 5893514424659355867, guid: 1f674075270d74d45bfb5b97a7efca05, type: 3}
+  - {fileID: 9055718599631370530, guid: 791fefc2caf010844b2507fc3cf144ef, type: 3}
+  - {fileID: 8939025272417803039, guid: eeda9641d442fba46a977bfe1d52dedd, type: 3}
+  - {fileID: 809413932487904190, guid: f12dbea4d47967e4996edf3afac46191, type: 3}
+  - {fileID: 6868613437774898714, guid: efc574dae5e0ff544b288b72b4b14f1d, type: 3}
+  - {fileID: 2895706452888718083, guid: d1b99b85e387b264fa93f0a8f2b55ace, type: 3}
+  - {fileID: 8273591613551270490, guid: 33071c41e88a7d14c8483536ed5c686e, type: 3}
+  - {fileID: 2852764676481014779, guid: 7858e0c20f6beac4bb871836c6278886, type: 3}
+  - {fileID: 468773754808838196, guid: 74a3bcb9acb291c45b4aecfb8b73a92c, type: 3}

@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: CableBoxes
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 8275450097075024602, guid: d00db10e79c3be744bfb6d04d522bace, type: 3}
+  - {fileID: 4090332813213793819, guid: 44e8f73cdcf2c5d458060e3771cde3ff, type: 3}
+  - {fileID: 6987828123485821839, guid: b2deff17dc424e64689d0ee86960c07a, type: 3}
+  - {fileID: 2904789488340301911, guid: 7851a3162dacb0947a84c7dd6f101c7f, type: 3}
+  - {fileID: 2729619658448624285, guid: 34c2dbf65ff14d8498e2187a49fbfba9, type: 3}
+  - {fileID: 8007417127736419337, guid: 60553641a2337fc4a8f4cd39c767821c, type: 3}
+  - {fileID: 2300789170943999281, guid: bde72112b304cd8438fd00218986add5, type: 3}

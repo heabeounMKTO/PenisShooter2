@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: Skirt_LCorner
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 3292499224393204838, guid: ae02f1934362d714b9485547df2be743, type: 3}
+  - {fileID: 3292499224393204838, guid: 7c495e73d7c72f1469f55bde983a0a77, type: 3}

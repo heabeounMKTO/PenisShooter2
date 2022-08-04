@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: Railing_EndCaps
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 1356347955178647569, guid: 6a146e9f721152a468b13301036d3315, type: 3}
+  - {fileID: 7587710476618878579, guid: a5b1a83e166defc4f951889c793a6634, type: 3}
+  - {fileID: 4646382083952066473, guid: e859a62d89ba58d44b458967036f645b, type: 3}

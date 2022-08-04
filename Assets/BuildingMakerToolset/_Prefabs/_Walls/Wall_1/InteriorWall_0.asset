@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: InteriorWall_0
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 5413650973220562635, guid: cd38c6fbefca3f847a1b1af43c2d7745, type: 3}
+  - {fileID: 8710044906462343378, guid: 03983a51476ac4c44acf023e09c202f8, type: 3}
+  - {fileID: 4896380659703890802, guid: b5ba4353e339da741afaf7abb5f3c287, type: 3}
+  - {fileID: 1043201661316933072, guid: 3429cb935916be74397f3bfc2253e4db, type: 3}
+  - {fileID: 7712414857910271719, guid: 80ce049cb75e20c448504e5b8aec8950, type: 3}
+  - {fileID: 3075380717943125238, guid: 7bc1cb8fee023ea4d8c90317de6cb02a, type: 3}

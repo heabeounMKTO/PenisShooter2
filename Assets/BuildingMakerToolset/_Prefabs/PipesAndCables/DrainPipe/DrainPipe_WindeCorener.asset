@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: DrainPipe_WindeCorener
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 8617651880446380645, guid: 5197e136bceea55458e914a5ba17590e, type: 3}
+  - {fileID: 5517118208934757257, guid: ca5892af2404c65418eba9efdd4b4d90, type: 3}
+  - {fileID: 691844674802670689, guid: b6ee3da079cd8644783805b300147163, type: 3}
+  - {fileID: 3452801149966080321, guid: aeb5267332a883e4db80b95b29e0e280, type: 3}

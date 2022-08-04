@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07dd6f7996e897849b911903d7b01ba9, type: 3}
+  m_Name: RailingConnections
+  m_EditorClassIdentifier: 
+  prefabs:
+  - {fileID: 2285903011386775865, guid: cc2ec00f174b335418484271ba75987a, type: 3}
+  - {fileID: 402938527950601830, guid: b87e3dcedf530af41b94699035e3d8f2, type: 3}
+  - {fileID: 9085005070338417928, guid: 35d53f6134609b241b6a1236da751282, type: 3}
+  - {fileID: 5332197388262207858, guid: 57c9a8ca1cd73d14e974af8af9282459, type: 3}
+  - {fileID: 3397293222911462209, guid: 7fde467940e3afa489dc56b8c36c5e5e, type: 3}
+  - {fileID: 3889886353293461768, guid: 3aa44b3b6fcd0d244b71699925e29be2, type: 3}
+  - {fileID: 1597536504675647638, guid: e7ecf9d77afd0f740b9fa0cccea8cc60, type: 3}
+  - {fileID: 3803761764514354982, guid: d8c3fdca2d937dd439289f199bb9848b, type: 3}

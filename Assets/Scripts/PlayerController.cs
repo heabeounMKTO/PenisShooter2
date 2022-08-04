@@ -40,7 +40,15 @@ public class PlayerController : MonoBehaviourPunCallbacks
             }
         playerJump();
         }
-        
+
+        if(Input.GetMouseButtonDown(0)){
+            Shoot();
+        }
+
+
+        // if(Input.GetKeyDown(KeyCode.Escape)){
+        //     Cursor.lockState = CursorLockMode.None;
+        // }
     
     }
 
@@ -112,6 +120,19 @@ public class PlayerController : MonoBehaviourPunCallbacks
 
        
           
+    }
+
+
+
+    private void Shoot(){
+        Ray ray = FPScam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        ray.origin = FPScam.transform.position;
+
+        if(Physics.Raycast(ray, out RaycastHit hit)){
+
+            Debug.Log("hit " + hit.collider.gameObject.name);
+
+        }
     }
 }  
 

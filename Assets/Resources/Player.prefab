@@ -65,7 +65,10 @@ MonoBehaviour:
   gravityMod: 2
   bulletImpact: {fileID: 6276032232285848810, guid: d831c41b76b72a7489b948a26c3aa097,
     type: 3}
+  SprayPenis: {fileID: 1537360787310325593, guid: 8633fcb109896d74889af0c8b34f7d10,
+    type: 3}
   gun: {fileID: 161168305051878551}
+  timeBetweenShots: 0.1
 --- !u!143 &1222118556658932646
 CharacterController:
   m_ObjectHideFlags: 0
@@ -4394,7 +4397,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4166463531722480, guid: 8d43e76b346f2f8448846e9211629d15, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.524
+      value: 0.543
       objectReference: {fileID: 0}
     - target: {fileID: 4166463531722480, guid: 8d43e76b346f2f8448846e9211629d15, type: 3}
       propertyPath: m_LocalPosition.y
@@ -4402,7 +4405,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4166463531722480, guid: 8d43e76b346f2f8448846e9211629d15, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.269
+      value: 0.609
       objectReference: {fileID: 0}
     - target: {fileID: 4166463531722480, guid: 8d43e76b346f2f8448846e9211629d15, type: 3}
       propertyPath: m_LocalRotation.w

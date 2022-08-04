@@ -23,7 +23,20 @@ public class PlayerController : MonoBehaviourPunCallbacks
     private Camera FPScam;
     public float jumpForce = 3f, gravityMod = 2f;
     public GameObject bulletImpact;
+    
+    public GameObject SprayPenis;
+
     public GameObject gun;
+    
+    private float shotCounter;
+    public float timeBetweenShots = 0.1f;
+
+    private float recoil = 0.0f;
+    private float maxRecoil_x = -20f;
+    private float maxRecoil_y = 20f;
+    private float recoilSpeed = 2f;
+
+    
 
 
     void Start()
@@ -50,9 +63,24 @@ public class PlayerController : MonoBehaviourPunCallbacks
 
         if(Input.GetMouseButtonDown(0)){
             Shoot();
+            StartRecoil(0.2f, 10f, 10f);
         }
 
-        gun.transform.rotation = FPScam.transform.rotation;
+        if(Input.GetMouseButton(0)){
+            shotCounter -= Time.deltaTime;
+
+            if(shotCounter <= 0){
+                Shoot();
+                StartRecoil(0.2f, 10f, 10f);
+            }
+        }
+
+        if(Input.GetKeyDown(KeyCode.T)){
+
+            SprayPenisPic();
+        }
+
+       
         // if(Input.GetKeyDown(KeyCode.Escape)){
         //     Cursor.lockState = CursorLockMode.None;
         // }
@@ -64,6 +92,7 @@ public class PlayerController : MonoBehaviourPunCallbacks
         if(photonView.IsMine){
             FPScam.transform.position = viewPoint.position;
             FPScam.transform.rotation = viewPoint.rotation;
+            
         }
         
     }
@@ -78,6 +107,9 @@ public class PlayerController : MonoBehaviourPunCallbacks
         verticalRotStore = Mathf.Clamp(verticalRotStore, minLookAngle, maxLookAngle);
         
         viewPoint.rotation = Quaternion.Euler(-verticalRotStore, viewPoint.rotation.eulerAngles.y, viewPoint.rotation.eulerAngles.z);
+        
+        gun.transform.rotation = viewPoint.rotation;
+    
     }
 
     void playerMovement(){
@@ -138,8 +170,47 @@ public class PlayerController : MonoBehaviourPunCallbacks
         if(Physics.Raycast(ray, out RaycastHit hit)){
 
             Debug.Log("hit " + hit.collider.gameObject.name);
-            Instantiate(bulletImpact, hit.point + (hit.normal * 0.002f), Quaternion.LookRotation(hit.normal, Vector3.up));
+            GameObject bulletImpactObject = Instantiate(bulletImpact, hit.point + (hit.normal * 0.002f), Quaternion.LookRotation(hit.normal, Vector3.up));
+            Destroy(bulletImpactObject, 10f);
+        }
 
+        shotCounter = timeBetweenShots;
+    }
+
+    private void recoiling ()
+    {
+        if (recoil > 0f) {
+            Quaternion maxRecoil = Quaternion.Euler (maxRecoil_x, maxRecoil_y, 0f);
+            // Dampen towards the target rotation
+            gun.transform.localRotation = Quaternion.Slerp (transform.localRotation, maxRecoil, Time.deltaTime * recoilSpeed);
+            recoil -= Time.deltaTime;
+        } else {
+            recoil = 0f;
+            // Dampen towards the target rotation
+            gun.transform.localRotation = Quaternion.Slerp (transform.localRotation, Quaternion.identity, Time.deltaTime * recoilSpeed / 2);
+        }
+    }
+
+
+
+        public void StartRecoil (float recoilParam, float maxRecoil_xParam, float recoilSpeedParam)
+    {
+        // in seconds
+        recoil = recoilParam;
+        maxRecoil_x = maxRecoil_xParam;
+        recoilSpeed = recoilSpeedParam;
+        maxRecoil_y = Random.Range(-maxRecoil_xParam, maxRecoil_xParam);
+    }
+
+
+    public void SprayPenisPic(){
+        Ray spray = FPScam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        spray.origin = FPScam.transform.position;
+
+        if(Physics.Raycast(spray, out RaycastHit hit)){
+
+            GameObject sprayImpact = Instantiate(SprayPenis, hit.point + (hit.normal * 0.002f), Quaternion.LookRotation(hit.normal, Vector3.up));
+            Destroy(SprayPenis, 30f);
         }
     }
 }  

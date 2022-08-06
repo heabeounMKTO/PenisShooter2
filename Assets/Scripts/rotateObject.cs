@@ -18,7 +18,7 @@ public class rotateObject : MonoBehaviour
    // Update is called once per frame
    void Update () {
     smoothTime = Random.Range(0.01f,4f);
-    print($"smoothtime{smoothTime}");
+    // print($"smoothtime{smoothTime}");
      smooth = Time.deltaTime * smoothTime * convertedTime;
      transform.Rotate(rotationDirection * smooth);
    }

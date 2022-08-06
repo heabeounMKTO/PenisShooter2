@@ -26,7 +26,10 @@ public class PlayerController : MonoBehaviourPunCallbacks
     
     public GameObject SprayPenis;
 
-    public GameObject gun;
+
+    // public Image smallcrosshair;
+    // public Image bigcrosshair;
+    // public GameObject gun;
     
     private float shotCounter;
     public float timeBetweenShots = 0.1f;
@@ -35,6 +38,9 @@ public class PlayerController : MonoBehaviourPunCallbacks
     private float maxRecoil_x = -20f;
     private float maxRecoil_y = 20f;
     private float recoilSpeed = 2f;
+
+
+
 
     
 
@@ -108,7 +114,7 @@ public class PlayerController : MonoBehaviourPunCallbacks
         
         viewPoint.rotation = Quaternion.Euler(-verticalRotStore, viewPoint.rotation.eulerAngles.y, viewPoint.rotation.eulerAngles.z);
         
-        gun.transform.rotation = viewPoint.rotation;
+        // gun.transform.rotation = viewPoint.rotation;
     
     }
 
@@ -182,12 +188,12 @@ public class PlayerController : MonoBehaviourPunCallbacks
         if (recoil > 0f) {
             Quaternion maxRecoil = Quaternion.Euler (maxRecoil_x, maxRecoil_y, 0f);
             // Dampen towards the target rotation
-            gun.transform.localRotation = Quaternion.Slerp (transform.localRotation, maxRecoil, Time.deltaTime * recoilSpeed);
+            // gun.transform.localRotation = Quaternion.Slerp (transform.localRotation, maxRecoil, Time.deltaTime * recoilSpeed);
             recoil -= Time.deltaTime;
         } else {
             recoil = 0f;
             // Dampen towards the target rotation
-            gun.transform.localRotation = Quaternion.Slerp (transform.localRotation, Quaternion.identity, Time.deltaTime * recoilSpeed / 2);
+            //gun.transform.localRotation = Quaternion.Slerp (transform.localRotation, Quaternion.identity, Time.deltaTime * recoilSpeed / 2);
         }
     }
 

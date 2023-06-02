@@ -1,826 +1,692 @@
 // ----------------------------------------------------------------------------
 // <copyright file="PhotonView.cs" company="Exit Games GmbH">
-//   PhotonNetwork Framework for Unity - Copyright (C) 2018 Exit Games GmbH
+//   PhotonNetwork Framework for Unity - Copyright (C) 2011 Exit Games GmbH
 // </copyright>
 // <summary>
-// Contains the PhotonView class.
+//
 // </summary>
 // <author>developer@exitgames.com</author>
 // ----------------------------------------------------------------------------
 
+using System;
+using UnityEngine;
+using System.Reflection;
+using System.Collections.Generic;
+using ExitGames.Client.Photon;
 
-namespace Photon.Pun
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
+
+public enum ViewSynchronization { Off, ReliableDeltaCompressed, Unreliable, UnreliableOnChange }
+public enum OnSerializeTransform { OnlyPosition, OnlyRotation, OnlyScale, PositionAndRotation, All }
+public enum OnSerializeRigidBody { OnlyVelocity, OnlyAngularVelocity, All }
+
+/// <summary>
+/// Options to define how Ownership Transfer is handled per PhotonView.
+/// </summary>
+/// <remarks>
+/// This setting affects how RequestOwnership and TransferOwnership work at runtime.
+/// </remarks>
+public enum OwnershipOption
 {
-    using System;
-    using UnityEngine;
-    using UnityEngine.Serialization;
-    using System.Collections.Generic;
-    using Photon.Realtime;
+    /// <summary>
+    /// Ownership is fixed. Instantiated objects stick with their creator, scene objects always belong to the Master Client.
+    /// </summary>
+    Fixed,
+    /// <summary>
+    /// Ownership can be taken away from the current owner who can't object.
+    /// </summary>
+    Takeover,
+    /// <summary>
+    /// Ownership can be requested with PhotonView.RequestOwnership but the current owner has to agree to give up ownership.
+    /// </summary>
+    /// <remarks>The current owner has to implement IPunCallbacks.OnOwnershipRequest to react to the ownership request.</remarks>
+    Request
+}
 
+
+/// <summary>
+/// PUN's NetworkView replacement class for networking. Use it like a NetworkView.
+/// </summary>
+/// \ingroup publicApi
+[AddComponentMenu("Photon Networking/Photon View")]
+public class PhotonView : Photon.MonoBehaviour
+{
     #if UNITY_EDITOR
-    using UnityEditor;
+    [ContextMenu("Open PUN Wizard")]
+    void OpenPunWizard()
+    {
+        EditorApplication.ExecuteMenuItem("Window/Photon Unity Networking");
+    }
     #endif
 
-    /// <summary>
-    /// A PhotonView identifies an object across the network (viewID) and configures how the controlling client updates remote instances.
-    /// </summary>
-    /// \ingroup publicApi
-    [AddComponentMenu("Photon Networking/Photon View")]
-    public class PhotonView : MonoBehaviour
+    public int ownerId;
+
+    public byte group = 0;
+
+    protected internal bool mixedModeIsReliable = false;
+
+
+	/// <summary>
+	/// Flag to check if ownership of this photonView was set during the lifecycle. Used for checking when joining late if event with mismatched owner and sender needs addressing.
+	/// </summary>
+	/// <value><c>true</c> if owner ship was transfered; otherwise, <c>false</c>.</value>
+	public bool OwnerShipWasTransfered;
+
+
+    // NOTE: this is now an integer because unity won't serialize short (needed for instantiation). we SEND only a short though!
+    // NOTE: prefabs have a prefixBackup of -1. this is replaced with any currentLevelPrefix that's used at runtime. instantiated GOs get their prefix set pre-instantiation (so those are not -1 anymore)
+    public int prefix
     {
-        #if UNITY_EDITOR
-        [UnityEditor.InitializeOnLoadMethod]
-        private static void SetPhotonViewExecutionOrder()
+        get
         {
-            int photonViewExecutionOrder = -16000;
-            GameObject go = new GameObject();
-            PhotonView pv = go.AddComponent<PhotonView>();
-            MonoScript monoScript = MonoScript.FromMonoBehaviour(pv);
-
-            if (photonViewExecutionOrder != MonoImporter.GetExecutionOrder(monoScript))
+            if (this.prefixBackup == -1 && PhotonNetwork.networkingPeer != null)
             {
-                MonoImporter.SetExecutionOrder(monoScript, photonViewExecutionOrder); // very early but allows other scripts to run even earlier...
+                this.prefixBackup = PhotonNetwork.networkingPeer.currentLevelPrefix;
             }
 
-            DestroyImmediate(go); 
+            return this.prefixBackup;
         }
-        #endif
+        set { this.prefixBackup = value; }
+    }
 
-        #if UNITY_EDITOR
-        [ContextMenu("Open PUN Wizard")]
-        void OpenPunWizard()
+    // this field is serialized by unity. that means it is copied when instantiating a persistent obj into the scene
+    public int prefixBackup = -1;
+
+    /// <summary>
+    /// This is the instantiationData that was passed when calling PhotonNetwork.Instantiate* (if that was used to spawn this prefab)
+    /// </summary>
+    public object[] instantiationData
+    {
+        get
         {
-            EditorApplication.ExecuteMenuItem("Window/Photon Unity Networking/PUN Wizard");
-        }
-        #endif
-
-        #if UNITY_EDITOR
-        // Suppressing compiler warning "this variable is never used". Only used in the CustomEditor, only in Editor
-        #pragma warning disable 0414
-        [SerializeField]
-        bool ObservedComponentsFoldoutOpen = true;
-        #pragma warning restore 0414
-        #endif
-        
-        #if UNITY_EDITOR
-        /// called by Editor to reset the component
-        private void Reset()
-        {
-            observableSearch = ObservableSearch.AutoFindAll;
-        }
-        #endif
-
-
-
-        [FormerlySerializedAs("group")]
-        public byte Group = 0;
-
-        // NOTE: this is now an integer because unity won't serialize short (needed for instantiation). we SEND only a short though!
-        // NOTE: prefabs have a prefixField of -1. this is replaced with any currentLevelPrefix that's used at runtime. instantiated GOs get their prefix set pre-instantiation (so those are not -1 anymore)
-        public int Prefix
-        {
-            get
+            if (!this.didAwake)
             {
-                if (this.prefixField == -1 && PhotonNetwork.NetworkingClient != null)
+                // even though viewID and instantiationID are setup before the GO goes live, this data can't be set. as workaround: fetch it if needed
+                this.instantiationDataField = PhotonNetwork.networkingPeer.FetchInstantiationData(this.instantiationId);
+            }
+            return this.instantiationDataField;
+        }
+        set { this.instantiationDataField = value; }
+    }
+
+    internal object[] instantiationDataField;
+
+    /// <summary>
+    /// For internal use only, don't use
+    /// </summary>
+    protected internal object[] lastOnSerializeDataSent = null;
+
+    /// <summary>
+    /// For internal use only, don't use
+    /// </summary>
+    protected internal object[] lastOnSerializeDataReceived = null;
+
+    public ViewSynchronization synchronization;
+
+    public OnSerializeTransform onSerializeTransformOption = OnSerializeTransform.PositionAndRotation;
+
+    public OnSerializeRigidBody onSerializeRigidBodyOption = OnSerializeRigidBody.All;
+
+    /// <summary>Defines if ownership of this PhotonView is fixed, can be requested or simply taken.</summary>
+    /// <remarks>
+    /// Note that you can't edit this value at runtime.
+    /// The options are described in enum OwnershipOption.
+    /// The current owner has to implement IPunCallbacks.OnOwnershipRequest to react to the ownership request.
+    /// </remarks>
+    public OwnershipOption ownershipTransfer = OwnershipOption.Fixed;
+
+    public List<Component> ObservedComponents;
+    Dictionary<Component, MethodInfo> m_OnSerializeMethodInfos = new Dictionary<Component, MethodInfo>(3);
+
+#if UNITY_EDITOR
+    // Suppressing compiler warning "this variable is never used". Only used in the CustomEditor, only in Editor
+    #pragma warning disable 0414
+    [SerializeField]
+    bool ObservedComponentsFoldoutOpen = true;
+    #pragma warning restore 0414
+#endif
+
+    [SerializeField]
+    private int viewIdField = 0;
+
+    /// <summary>
+    /// The ID of the PhotonView. Identifies it in a networked game (per room).
+    /// </summary>
+    /// <remarks>See: [Network Instantiation](@ref instantiateManual)</remarks>
+    public int viewID
+    {
+        get { return this.viewIdField; }
+        set
+        {
+            // if ID was 0 for an awakened PhotonView, the view should add itself into the networkingPeer.photonViewList after setup
+            bool viewMustRegister = this.didAwake && this.viewIdField == 0;
+
+            // TODO: decide if a viewID can be changed once it wasn't 0. most likely that is not a good idea
+            // check if this view is in networkingPeer.photonViewList and UPDATE said list (so we don't keep the old viewID with a reference to this object)
+            // PhotonNetwork.networkingPeer.RemovePhotonView(this, true);
+
+            this.ownerId = value / PhotonNetwork.MAX_VIEW_IDS;
+
+            this.viewIdField = value;
+
+            if (viewMustRegister)
+            {
+                PhotonNetwork.networkingPeer.RegisterPhotonView(this);
+            }
+            //Debug.Log("Set viewID: " + value + " ->  owner: " + this.ownerId + " subId: " + this.subId);
+        }
+    }
+
+    public int instantiationId; // if the view was instantiated with a GO, this GO has a instantiationID (first view's viewID)
+
+    /// <summary>True if the PhotonView was loaded with the scene (game object) or instantiated with InstantiateSceneObject.</summary>
+    /// <remarks>
+    /// Scene objects are not owned by a particular player but belong to the scene. Thus they don't get destroyed when their
+    /// creator leaves the game and the current Master Client can control them (whoever that is).
+    /// The ownerId is 0 (player IDs are 1 and up).
+    /// </remarks>
+    public bool isSceneView
+    {
+        get { return this.CreatorActorNr == 0; }
+    }
+
+    /// <summary>
+    /// The owner of a PhotonView is the player who created the GameObject with that view. Objects in the scene don't have an owner.
+    /// </summary>
+    /// <remarks>
+    /// The owner/controller of a PhotonView is also the client which sends position updates of the GameObject.
+    ///
+    /// Ownership can be transferred to another player with PhotonView.TransferOwnership or any player can request
+    /// ownership by calling the PhotonView's RequestOwnership method.
+    /// The current owner has to implement IPunCallbacks.OnOwnershipRequest to react to the ownership request.
+    /// </remarks>
+    public PhotonPlayer owner
+    {
+        get
+        {
+            return PhotonPlayer.Find(this.ownerId);
+        }
+    }
+
+    public int OwnerActorNr
+    {
+        get { return this.ownerId; }
+    }
+
+    public bool isOwnerActive
+    {
+        get { return this.ownerId != 0 && PhotonNetwork.networkingPeer.mActors.ContainsKey(this.ownerId); }
+    }
+
+    public int CreatorActorNr
+    {
+        get { return this.viewIdField / PhotonNetwork.MAX_VIEW_IDS; }
+    }
+
+    /// <summary>
+    /// True if the PhotonView is "mine" and can be controlled by this client.
+    /// </summary>
+    /// <remarks>
+    /// PUN has an ownership concept that defines who can control and destroy each PhotonView.
+    /// True in case the owner matches the local PhotonPlayer.
+    /// True if this is a scene photonview on the Master client.
+    /// </remarks>
+    public bool isMine
+    {
+        get
+        {
+            return (this.ownerId == PhotonNetwork.player.ID) || (!this.isOwnerActive && PhotonNetwork.isMasterClient);
+        }
+    }
+
+	/// <summary>
+	/// The current master ID so that we can compare when we receive OnMasterClientSwitched() callback
+	/// It's public so that we can check it during ownerId assignments in networkPeer script
+	/// TODO: Maybe we can have the networkPeer always aware of the previous MasterClient?
+	/// </summary>
+	public int currentMasterID = -1;
+    protected internal bool didAwake;
+
+    [SerializeField]
+    protected internal bool isRuntimeInstantiated;
+
+    protected internal bool removedFromLocalViewList;
+
+    internal MonoBehaviour[] RpcMonoBehaviours;
+    private MethodInfo OnSerializeMethodInfo;
+
+    private bool failedToFindOnSerialize;
+
+    /// <summary>Called by Unity on start of the application and does a setup the PhotonView.</summary>
+    protected internal void Awake()
+    {
+        if (this.viewID != 0)
+        {
+            // registration might be too late when some script (on this GO) searches this view BUT GetPhotonView() can search ALL in that case
+            PhotonNetwork.networkingPeer.RegisterPhotonView(this);
+            this.instantiationDataField = PhotonNetwork.networkingPeer.FetchInstantiationData(this.instantiationId);
+        }
+
+        this.didAwake = true;
+    }
+
+    /// <summary>
+    /// Depending on the PhotonView's ownershipTransfer setting, any client can request to become owner of the PhotonView.
+    /// </summary>
+    /// <remarks>
+    /// Requesting ownership can give you control over a PhotonView, if the ownershipTransfer setting allows that.
+    /// The current owner might have to implement IPunCallbacks.OnOwnershipRequest to react to the ownership request.
+    ///
+    /// The owner/controller of a PhotonView is also the client which sends position updates of the GameObject.
+    /// </remarks>
+    public void RequestOwnership()
+    {
+        PhotonNetwork.networkingPeer.RequestOwnership(this.viewID, this.ownerId);
+    }
+
+    /// <summary>
+    /// Transfers the ownership of this PhotonView (and GameObject) to another player.
+    /// </summary>
+    /// <remarks>
+    /// The owner/controller of a PhotonView is also the client which sends position updates of the GameObject.
+    /// </remarks>
+    public void TransferOwnership(PhotonPlayer newOwner)
+    {
+        this.TransferOwnership(newOwner.ID);
+    }
+
+    /// <summary>
+    /// Transfers the ownership of this PhotonView (and GameObject) to another player.
+    /// </summary>
+    /// <remarks>
+    /// The owner/controller of a PhotonView is also the client which sends position updates of the GameObject.
+    /// </remarks>
+    public void TransferOwnership(int newOwnerId)
+    {
+        PhotonNetwork.networkingPeer.TransferOwnership(this.viewID, newOwnerId);
+        this.ownerId = newOwnerId;  // immediately switch ownership locally, to avoid more updates sent from this client.
+    }
+
+	/// <summary>
+	///Check ownerId assignment for sceneObjects to keep being owned by the MasterClient.
+	/// </summary>
+	/// <param name="newMasterClient">New master client.</param>
+	public void OnMasterClientSwitched(PhotonPlayer newMasterClient)
+	{
+		if (this.CreatorActorNr == 0 && !this.OwnerShipWasTransfered && (this.currentMasterID== -1 || this.ownerId==this.currentMasterID))
+		{
+			this.ownerId = newMasterClient.ID;
+		}
+
+		this.currentMasterID = newMasterClient.ID;
+	}
+
+
+    protected internal void OnDestroy()
+    {
+        if (!this.removedFromLocalViewList)
+        {
+            bool wasInList = PhotonNetwork.networkingPeer.LocalCleanPhotonView(this);
+            bool loading = false;
+
+			#if (!UNITY_5 || UNITY_5_0 || UNITY_5_1) && !UNITY_5_3_OR_NEWER
+            loading = Application.isLoadingLevel;
+            #endif
+
+            if (wasInList && !loading && this.instantiationId > 0 && !PhotonHandler.AppQuits && PhotonNetwork.logLevel >= PhotonLogLevel.Informational)
+            {
+                Debug.Log("PUN-instantiated '" + this.gameObject.name + "' got destroyed by engine. This is OK when loading levels. Otherwise use: PhotonNetwork.Destroy().");
+            }
+        }
+    }
+
+    public void SerializeView(PhotonStream stream, PhotonMessageInfo info)
+    {
+        if (this.ObservedComponents != null && this.ObservedComponents.Count > 0)
+        {
+            for (int i = 0; i < this.ObservedComponents.Count; ++i)
+            {
+                SerializeComponent(this.ObservedComponents[i], stream, info);
+            }
+        }
+    }
+
+    public void DeserializeView(PhotonStream stream, PhotonMessageInfo info)
+    {
+        if (this.ObservedComponents != null && this.ObservedComponents.Count > 0)
+        {
+            for (int i = 0; i < this.ObservedComponents.Count; ++i)
+            {
+                DeserializeComponent(this.ObservedComponents[i], stream, info);
+            }
+        }
+    }
+
+    protected internal void DeserializeComponent(Component component, PhotonStream stream, PhotonMessageInfo info)
+    {
+        if (component == null)
+        {
+            return;
+        }
+
+        // Use incoming data according to observed type
+        if (component is MonoBehaviour)
+        {
+            ExecuteComponentOnSerialize(component, stream, info);
+        }
+        else if (component is Transform)
+        {
+            Transform trans = (Transform) component;
+
+            switch (this.onSerializeTransformOption)
+            {
+                case OnSerializeTransform.All:
+                    trans.localPosition = (Vector3) stream.ReceiveNext();
+                    trans.localRotation = (Quaternion) stream.ReceiveNext();
+                    trans.localScale = (Vector3) stream.ReceiveNext();
+                    break;
+                case OnSerializeTransform.OnlyPosition:
+                    trans.localPosition = (Vector3) stream.ReceiveNext();
+                    break;
+                case OnSerializeTransform.OnlyRotation:
+                    trans.localRotation = (Quaternion) stream.ReceiveNext();
+                    break;
+                case OnSerializeTransform.OnlyScale:
+                    trans.localScale = (Vector3) stream.ReceiveNext();
+                    break;
+                case OnSerializeTransform.PositionAndRotation:
+                    trans.localPosition = (Vector3) stream.ReceiveNext();
+                    trans.localRotation = (Quaternion) stream.ReceiveNext();
+                    break;
+            }
+        }
+        else if (component is Rigidbody)
+        {
+            Rigidbody rigidB = (Rigidbody) component;
+
+            switch (this.onSerializeRigidBodyOption)
+            {
+                case OnSerializeRigidBody.All:
+                    rigidB.velocity = (Vector3) stream.ReceiveNext();
+                    rigidB.angularVelocity = (Vector3) stream.ReceiveNext();
+                    break;
+                case OnSerializeRigidBody.OnlyAngularVelocity:
+                    rigidB.angularVelocity = (Vector3) stream.ReceiveNext();
+                    break;
+                case OnSerializeRigidBody.OnlyVelocity:
+                    rigidB.velocity = (Vector3) stream.ReceiveNext();
+                    break;
+            }
+        }
+        else if (component is Rigidbody2D)
+        {
+            Rigidbody2D rigidB = (Rigidbody2D) component;
+
+            switch (this.onSerializeRigidBodyOption)
+            {
+                case OnSerializeRigidBody.All:
+                    rigidB.velocity = (Vector2) stream.ReceiveNext();
+                    rigidB.angularVelocity = (float) stream.ReceiveNext();
+                    break;
+                case OnSerializeRigidBody.OnlyAngularVelocity:
+                    rigidB.angularVelocity = (float) stream.ReceiveNext();
+                    break;
+                case OnSerializeRigidBody.OnlyVelocity:
+                    rigidB.velocity = (Vector2) stream.ReceiveNext();
+                    break;
+            }
+        }
+        else
+        {
+            Debug.LogError("Type of observed is unknown when receiving.");
+        }
+    }
+
+    protected internal void SerializeComponent(Component component, PhotonStream stream, PhotonMessageInfo info)
+    {
+        if (component == null)
+        {
+            return;
+        }
+
+        if (component is MonoBehaviour)
+        {
+            ExecuteComponentOnSerialize(component, stream, info);
+        }
+        else if (component is Transform)
+        {
+            Transform trans = (Transform) component;
+
+            switch (this.onSerializeTransformOption)
+            {
+                case OnSerializeTransform.All:
+                    stream.SendNext(trans.localPosition);
+                    stream.SendNext(trans.localRotation);
+                    stream.SendNext(trans.localScale);
+                    break;
+                case OnSerializeTransform.OnlyPosition:
+                    stream.SendNext(trans.localPosition);
+                    break;
+                case OnSerializeTransform.OnlyRotation:
+                    stream.SendNext(trans.localRotation);
+                    break;
+                case OnSerializeTransform.OnlyScale:
+                    stream.SendNext(trans.localScale);
+                    break;
+                case OnSerializeTransform.PositionAndRotation:
+                    stream.SendNext(trans.localPosition);
+                    stream.SendNext(trans.localRotation);
+                    break;
+            }
+        }
+        else if (component is Rigidbody)
+        {
+            Rigidbody rigidB = (Rigidbody) component;
+
+            switch (this.onSerializeRigidBodyOption)
+            {
+                case OnSerializeRigidBody.All:
+                    stream.SendNext(rigidB.velocity);
+                    stream.SendNext(rigidB.angularVelocity);
+                    break;
+                case OnSerializeRigidBody.OnlyAngularVelocity:
+                    stream.SendNext(rigidB.angularVelocity);
+                    break;
+                case OnSerializeRigidBody.OnlyVelocity:
+                    stream.SendNext(rigidB.velocity);
+                    break;
+            }
+        }
+        else if (component is Rigidbody2D)
+        {
+            Rigidbody2D rigidB = (Rigidbody2D) component;
+
+            switch (this.onSerializeRigidBodyOption)
+            {
+                case OnSerializeRigidBody.All:
+                    stream.SendNext(rigidB.velocity);
+                    stream.SendNext(rigidB.angularVelocity);
+                    break;
+                case OnSerializeRigidBody.OnlyAngularVelocity:
+                    stream.SendNext(rigidB.angularVelocity);
+                    break;
+                case OnSerializeRigidBody.OnlyVelocity:
+                    stream.SendNext(rigidB.velocity);
+                    break;
+            }
+        }
+        else
+        {
+            Debug.LogError("Observed type is not serializable: " + component.GetType());
+        }
+    }
+
+    protected internal void ExecuteComponentOnSerialize(Component component, PhotonStream stream, PhotonMessageInfo info)
+    {
+        IPunObservable observable = component as IPunObservable;
+        if (observable != null)
+        {
+            observable.OnPhotonSerializeView(stream, info);
+        }
+        else if (component != null)
+        {
+            MethodInfo method = null;
+            bool found = this.m_OnSerializeMethodInfos.TryGetValue(component, out method);
+            if (!found)
+            {
+                bool foundMethod = NetworkingPeer.GetMethod(component as MonoBehaviour, PhotonNetworkingMessage.OnPhotonSerializeView.ToString(), out method);
+
+                if (foundMethod == false)
                 {
-                    this.prefixField = PhotonNetwork.currentLevelPrefix;
+                    Debug.LogError("The observed monobehaviour (" + component.name + ") of this PhotonView does not implement OnPhotonSerializeView()!");
+                    method = null;
                 }
 
-                return this.prefixField;
+                this.m_OnSerializeMethodInfos.Add(component, method);
             }
-            set { this.prefixField = value; }
-        }
 
-        // this field is serialized by unity. that means it is copied when instantiating a persistent obj into the scene
-        [FormerlySerializedAs("prefixBackup")]
-        public int prefixField = -1;
-
-
-
-        /// <summary>
-        /// This is the InstantiationData that was passed when calling PhotonNetwork.Instantiate* (if that was used to spawn this prefab)
-        /// </summary>
-        public object[] InstantiationData
-        {
-            get { return this.instantiationDataField; }
-            protected internal set { this.instantiationDataField = value; }
-        }
-
-        internal object[] instantiationDataField;
-
-        /// <summary>
-        /// For internal use only, don't use
-        /// </summary>
-        protected internal List<object> lastOnSerializeDataSent = null;
-        protected internal List<object> syncValues;
-
-        /// <summary>
-        /// For internal use only, don't use
-        /// </summary>
-        protected internal object[] lastOnSerializeDataReceived = null;
-
-        [FormerlySerializedAs("synchronization")]
-        public ViewSynchronization Synchronization = ViewSynchronization.UnreliableOnChange;
-
-        protected internal bool mixedModeIsReliable = false;
-
-        /// <summary>Defines if ownership of this PhotonView is fixed, can be requested or simply taken.</summary>
-        /// <remarks>
-        /// Note that you can't edit this value at runtime.
-        /// The options are described in enum OwnershipOption.
-        /// The current owner has to implement IPunCallbacks.OnOwnershipRequest to react to the ownership request.
-        /// </remarks>
-        [FormerlySerializedAs("ownershipTransfer")]
-        public OwnershipOption OwnershipTransfer = OwnershipOption.Fixed;
-
-
-        public enum ObservableSearch { Manual, AutoFindActive, AutoFindAll }
-
-        /// Default to manual so existing PVs in projects default to same as before. Reset() changes this to AutoAll for new implementations.
-        public ObservableSearch observableSearch = ObservableSearch.Manual;
-        
-        public List<Component> ObservedComponents;
-
-
-
-        internal MonoBehaviour[] RpcMonoBehaviours;
-
-
-
-        [Obsolete("Renamed. Use IsRoomView instead")]
-        public bool IsSceneView
-        {
-            get { return this.IsRoomView; }
-        }
-        
-        /// <summary>True if the PhotonView was loaded with the scene (game object) or instantiated with InstantiateRoomObject.</summary>
-        /// <remarks>
-        /// Room objects are not owned by a particular player but belong to the scene. Thus they don't get destroyed when their
-        /// creator leaves the game and the current Master Client can control them (whoever that is).
-        /// The ownerId is 0 (player IDs are 1 and up).
-        /// </remarks>
-        public bool IsRoomView
-        {
-            get { return this.CreatorActorNr == 0; }
-        }
-
-        public bool IsOwnerActive
-        {
-            get { return this.Owner != null && !this.Owner.IsInactive; }
-        }
-
-        /// <summary>
-        /// True if the PhotonView is "mine" and can be controlled by this client.
-        /// </summary>
-        /// <remarks>
-        /// PUN has an ownership concept that defines who can control and destroy each PhotonView.
-        /// True in case the controller matches the local Player.
-        /// True if this is a scene photonview (null owner and ownerId == 0) on the Master client.
-        /// </remarks>
-        public bool IsMine { get; private set; }
-        public bool AmController
-        {
-            get { return this.IsMine; }
-        }
-
-        public Player Controller { get; private set; }
-        
-        public int CreatorActorNr { get; private set; }
-
-        public bool AmOwner { get; private set; }
-
-        
-        /// <summary>
-        /// The owner of a PhotonView is the creator of an object by default Ownership can be transferred and the owner may not be in the room anymore. Objects in the scene don't have an owner.
-        /// </summary>
-        /// <remarks>
-        /// The owner/controller of a PhotonView is also the client which sends position updates of the GameObject.
-        ///
-        /// Ownership can be transferred to another player with PhotonView.TransferOwnership or any player can request
-        /// ownership by calling the PhotonView's RequestOwnership method.
-        /// The current owner has to implement IPunCallbacks.OnOwnershipRequest to react to the ownership request.
-        /// </remarks>
-        public Player Owner { get; private set; }
-
-
-
-        [NonSerialized]
-        private int ownerActorNr;
-
-        public int OwnerActorNr
-        {
-            get { return this.ownerActorNr; }
-            set
+            if (method != null)
             {
-                if (value != 0 && this.ownerActorNr == value)
-                {
-                    return;
-                }
-
-                Player prevOwner = this.Owner;
-
-                this.Owner = PhotonNetwork.CurrentRoom == null ? null : PhotonNetwork.CurrentRoom.GetPlayer(value, true);
-                this.ownerActorNr = this.Owner != null ? this.Owner.ActorNumber : value;
-
-                this.AmOwner = PhotonNetwork.LocalPlayer != null && this.ownerActorNr == PhotonNetwork.LocalPlayer.ActorNumber;
-
-                this.UpdateCallbackLists();
-                if (!ReferenceEquals(this.OnOwnerChangeCallbacks, null))
-                {
-                    for (int i = 0, cnt = this.OnOwnerChangeCallbacks.Count; i < cnt; ++i)
-                    {
-                        this.OnOwnerChangeCallbacks[i].OnOwnerChange(this.Owner, prevOwner);
-                    }
-                }
+                method.Invoke(component, new object[] {stream, info});
             }
         }
-
-        
-        [NonSerialized]
-        private int controllerActorNr;
-
-        public int ControllerActorNr
-        {
-            get { return this.controllerActorNr; }
-            set
-            {
-                Player prevController = this.Controller;
-
-                this.Controller = PhotonNetwork.CurrentRoom == null ? null : PhotonNetwork.CurrentRoom.GetPlayer(value, true);
-                if (this.Controller != null && this.Controller.IsInactive)
-                {
-                    this.Controller = PhotonNetwork.MasterClient;
-                }
-                this.controllerActorNr = this.Controller != null ? this.Controller.ActorNumber : value;
-
-                this.IsMine = PhotonNetwork.LocalPlayer != null && this.controllerActorNr == PhotonNetwork.LocalPlayer.ActorNumber;
-
-                if (!ReferenceEquals(this.Controller, prevController))
-                {
-                    this.UpdateCallbackLists();
-                    if (!ReferenceEquals(this.OnControllerChangeCallbacks, null))
-                    {
-                        for (int i = 0, cnt = this.OnControllerChangeCallbacks.Count; i < cnt; ++i)
-                        {
-                            this.OnControllerChangeCallbacks[i].OnControllerChange(this.Controller, prevController);
-                        }
-                    }
-                }
-            }
-        }
-
-
-        /// This field is the Scene ViewID (0 if not used). loaded with the scene, used in Awake().
-        [SerializeField]
-        [FormerlySerializedAs("viewIdField")]
-        [HideInInspector]
-        public int sceneViewId = 0; // TODO: in best case, this is not public
-
-
-        /// This field is the "runtime" ViewID as backup for the property.
-        [NonSerialized]
-        private int viewIdField = 0;
-        
-        /// <summary>
-        /// The ID of the PhotonView. Identifies it in a networked game (per room).
-        /// </summary>
-        /// <remarks>See: [Network Instantiation](@ref instantiateManual)</remarks>
-        public int ViewID
-        {
-            get
-            {
-                return this.viewIdField;
-            }
-
-            set
-            {
-                // TODO: Check if the isPlaying check is needed when the PhotonViewHandler is updated
-                if (value != 0 && this.viewIdField != 0)
-                {
-                    Debug.LogWarning("Changing a ViewID while it's in use is not possible (except setting it to 0 (not being used). Current ViewID: " + this.viewIdField);
-                    return;
-                }
-                
-                if (value == 0 && this.viewIdField != 0)
-                {
-                    PhotonNetwork.LocalCleanPhotonView(this);
-                }
-
-                this.viewIdField = value;
-                this.CreatorActorNr = value / PhotonNetwork.MAX_VIEW_IDS;   // the creator can be derived from the viewId. this is also the initial owner and creator.
-                this.OwnerActorNr = this.CreatorActorNr;
-                this.ControllerActorNr = this.CreatorActorNr;
-                this.RebuildControllerCache();
-
-
-                // if the viewID is set to a new, legit value, the view should register in the list of active PVs.
-                if (value != 0)
-                {
-                    PhotonNetwork.RegisterPhotonView(this);
-                }
-            }
-        }
-
-        [FormerlySerializedAs("instantiationId")]
-        public int InstantiationId; // if the view was instantiated with a GO, this GO has a instantiationID (first view's viewID)
-
-        [SerializeField]
-        [HideInInspector]
-        public bool isRuntimeInstantiated;
-
-
-        protected internal bool removedFromLocalViewList;
-
-        
-        /// <summary>Will FindObservables() and assign the sceneViewId, if that is != 0. This initializes the PhotonView if loaded with the scene. Called once by Unity, when this instance is created.</summary>
-        protected internal void Awake()
-        {
-            if (this.ViewID != 0)
-            {
-                return;
-            }
-            
-            if (this.sceneViewId != 0)
-            {
-                // PhotonNetwork.Instantiate will set a ViewID != 0 before the object awakes. So only objects loaded with the scene ever use the sceneViewId (even if the obj got pooled)
-                this.ViewID = this.sceneViewId;
-            }
-
-            this.FindObservables();
-        }
-
-
-        /// called by PhotonNetwork.LocalCleanupAnythingInstantiated
-        internal void ResetPhotonView(bool resetOwner)
-        {
-            //// If this was fired by this connection rejoining, reset the ownership cache to owner = creator.
-            //// TODO: This reset may not be needed at all with the ownership being invalidated next.
-            //if (resetOwner)
-            //    ResetOwnership();
-
-            //this.ownershipCacheIsValid = OwnershipCacheState.Invalid;
-
-            // Reset the delta check to force a complete update of owned objects, to ensure joining connections get full updates.
-            this.lastOnSerializeDataSent = null;
-        }
-
-        
-        /// called by OnJoinedRoom, OnMasterClientSwitched, OnPlayerEnteredRoom and OnEvent for OwnershipUpdate
-        /// OnPlayerLeftRoom will set a new controller directly, if the controller or owner left
-        internal void RebuildControllerCache(bool ownerHasChanged = false)
-        {
-            //var prevController = this.controller;
-
-            // objects without controller and room objects (ownerId 0) check if controller update is needed
-            if (this.controllerActorNr == 0 || this.OwnerActorNr == 0 || this.Owner == null || this.Owner.IsInactive)
-            {
-                var masterclient = PhotonNetwork.MasterClient;
-                this.ControllerActorNr = masterclient == null ? -1 : masterclient.ActorNumber;
-            }
-            else
-            {
-                this.ControllerActorNr = this.OwnerActorNr;
-            }
-        }
-
-
-        public void OnPreNetDestroy(PhotonView rootView)
-        {
-            UpdateCallbackLists();
-
-            if (!ReferenceEquals(OnPreNetDestroyCallbacks, null))
-                for (int i = 0, cnt = OnPreNetDestroyCallbacks.Count; i < cnt; ++i)
-                {
-                    OnPreNetDestroyCallbacks[i].OnPreNetDestroy(rootView);
-                }
-        }
-
-        protected internal void OnDestroy()
-        {
-            if (!this.removedFromLocalViewList)
-            {
-                bool wasInList = PhotonNetwork.LocalCleanPhotonView(this);
-
-                if (wasInList && this.InstantiationId > 0 && !PhotonHandler.AppQuits && PhotonNetwork.LogLevel >= PunLogLevel.Informational)
-                {
-                    Debug.Log("PUN-instantiated '" + this.gameObject.name + "' got destroyed by engine. This is OK when loading levels. Otherwise use: PhotonNetwork.Destroy().");
-                }
-            }
-        }
-
-
-        /// <summary>
-        /// Depending on the PhotonView's OwnershipTransfer setting, any client can request to become owner of the PhotonView.
-        /// </summary>
-        /// <remarks>
-        /// Requesting ownership can give you control over a PhotonView, if the OwnershipTransfer setting allows that.
-        /// The current owner might have to implement IPunCallbacks.OnOwnershipRequest to react to the ownership request.
-        ///
-        /// The owner/controller of a PhotonView is also the client which sends position updates of the GameObject.
-        /// </remarks>
-        public void RequestOwnership()
-        {
-            if (OwnershipTransfer != OwnershipOption.Fixed)
-            {
-                PhotonNetwork.RequestOwnership(this.ViewID, this.ownerActorNr);
-            }
-            else
-            {
-                if (PhotonNetwork.LogLevel >= PunLogLevel.Informational)
-                {
-                    Debug.LogWarning("Attempting to RequestOwnership of GameObject '" + name + "' viewId: " + ViewID +
-                        ", but PhotonView.OwnershipTransfer is set to Fixed.");
-                }
-            }
-        }
-
-        /// <summary>
-        /// Transfers the ownership of this PhotonView (and GameObject) to another player.
-        /// </summary>
-        /// <remarks>
-        /// The owner/controller of a PhotonView is also the client which sends position updates of the GameObject.
-        /// </remarks>
-        public void TransferOwnership(Player newOwner)
-        {
-            if (newOwner != null)
-                TransferOwnership(newOwner.ActorNumber);
-            else
-            {
-                if (PhotonNetwork.LogLevel >= PunLogLevel.Informational)
-                {
-                    Debug.LogWarning("Attempting to TransferOwnership of GameObject '" + name + "' viewId: " + ViewID +
-                   ", but provided Player newOwner is null.");
-                }
-            }
-        }
-
-        /// <summary>
-        /// Transfers the ownership of this PhotonView (and GameObject) to another player.
-        /// </summary>
-        /// <remarks>
-        /// The owner/controller of a PhotonView is also the client which sends position updates of the GameObject.
-        /// </remarks>
-        public void TransferOwnership(int newOwnerId)
-        {
-            if (OwnershipTransfer == OwnershipOption.Takeover || (OwnershipTransfer == OwnershipOption.Request && this.AmController))
-            {
-                PhotonNetwork.TransferOwnership(this.ViewID, newOwnerId);
-            }
-            else
-            {
-                if (PhotonNetwork.LogLevel >= PunLogLevel.Informational)
-                {
-                    if (OwnershipTransfer == OwnershipOption.Fixed)
-                        Debug.LogWarning("Attempting to TransferOwnership of GameObject '" + name + "' viewId: " + ViewID +
-                            " without the authority to do so. TransferOwnership is not allowed if PhotonView.OwnershipTransfer is set to Fixed.");
-                    else if (OwnershipTransfer == OwnershipOption.Request)
-                        Debug.LogWarning("Attempting to TransferOwnership of GameObject '" + name + "' viewId: " + ViewID +
-                           " without the authority to do so. PhotonView.OwnershipTransfer is set to Request, so only the controller of this object can TransferOwnership.");
-                }
-            }
-        }
-
-        /// <summary>
-        /// Will find IPunObservable components on this GameObject and nested children and add them to the ObservedComponents list.
-        /// </summary>
-        /// <remarks>
-        /// This is called via PhotonView.Awake(), which in turn is called immediately by the engine's AddComponent method.
-        /// 
-        /// Changing the ObservedComponents of a PhotonView at runtime can be problematic, if other clients are not also
-        /// updating their list.
-        /// </remarks>
-        /// <param name="force">If true, FindObservables will work as if observableSearch is AutoFindActive.</param>
-        public void FindObservables(bool force = false)
-        {
-            if (!force && this.observableSearch == ObservableSearch.Manual)
-            {
-                return;
-            }
-
-            if (this.ObservedComponents == null)
-            {
-                this.ObservedComponents = new List<Component>();
-            }
-            else
-            {
-                this.ObservedComponents.Clear();
-            }
-
-            this.transform.GetNestedComponentsInChildren<Component, IPunObservable, PhotonView>(force || this.observableSearch == ObservableSearch.AutoFindAll, this.ObservedComponents);
-        }
-
-
-        public void SerializeView(PhotonStream stream, PhotonMessageInfo info)
-        {
-            if (this.ObservedComponents != null && this.ObservedComponents.Count > 0)
-            {
-                for (int i = 0; i < this.ObservedComponents.Count; ++i)
-                {
-                    var component = this.ObservedComponents[i];
-                    if (component != null)
-                        SerializeComponent(this.ObservedComponents[i], stream, info);
-                }
-            }
-        }
-
-        public void DeserializeView(PhotonStream stream, PhotonMessageInfo info)
-        {
-            if (this.ObservedComponents != null && this.ObservedComponents.Count > 0)
-            {
-                for (int i = 0; i < this.ObservedComponents.Count; ++i)
-                {
-                    var component = this.ObservedComponents[i];
-                    if (component != null)
-                        DeserializeComponent(component, stream, info);
-                }
-            }
-        }
-
-        protected internal void DeserializeComponent(Component component, PhotonStream stream, PhotonMessageInfo info)
-        {
-            IPunObservable observable = component as IPunObservable;
-            if (observable != null)
-            {
-                observable.OnPhotonSerializeView(stream, info);
-            }
-            else
-            {
-                Debug.LogError("Observed scripts have to implement IPunObservable. " + component + " does not. It is Type: " + component.GetType(), component.gameObject);
-            }
-        }
-
-        protected internal void SerializeComponent(Component component, PhotonStream stream, PhotonMessageInfo info)
-        {
-            IPunObservable observable = component as IPunObservable;
-            if (observable != null)
-            {
-                observable.OnPhotonSerializeView(stream, info);
-            }
-            else
-            {
-                Debug.LogError("Observed scripts have to implement IPunObservable. " + component + " does not. It is Type: " + component.GetType(), component.gameObject);
-            }
-        }
-
-
-        /// <summary>
-        /// Can be used to refesh the list of MonoBehaviours on this GameObject while PhotonNetwork.UseRpcMonoBehaviourCache is true.
-        /// </summary>
-        /// <remarks>
-        /// Set PhotonNetwork.UseRpcMonoBehaviourCache to true to enable the caching.
-        /// Uses this.GetComponents<MonoBehaviour>() to get a list of MonoBehaviours to call RPCs on (potentially).
-        ///
-        /// While PhotonNetwork.UseRpcMonoBehaviourCache is false, this method has no effect,
-        /// because the list is refreshed when a RPC gets called.
-        /// </remarks>
-        public void RefreshRpcMonoBehaviourCache()
-        {
-            this.RpcMonoBehaviours = this.GetComponents<MonoBehaviour>();
-        }
-
-
-        /// <summary>
-        /// Call a RPC method of this GameObject on remote clients of this room (or on all, including this client).
-        /// </summary>
-        /// <remarks>
-        /// [Remote Procedure Calls](@ref rpcManual) are an essential tool in making multiplayer games with PUN.
-        /// It enables you to make every client in a room call a specific method.
-        ///
-        /// RPC calls can target "All" or the "Others".
-        /// Usually, the target "All" gets executed locally immediately after sending the RPC.
-        /// The "*ViaServer" options send the RPC to the server and execute it on this client when it's sent back.
-        /// Of course, calls are affected by this client's lag and that of remote clients.
-        ///
-        /// Each call automatically is routed to the same PhotonView (and GameObject) that was used on the
-        /// originating client.
-        ///
-        /// See: [Remote Procedure Calls](@ref rpcManual).
-        /// </remarks>
-        /// <param name="methodName">The name of a fitting method that was has the RPC attribute.</param>
-        /// <param name="target">The group of targets and the way the RPC gets sent.</param>
-        /// <param name="parameters">The parameters that the RPC method has (must fit this call!).</param>
-        public void RPC(string methodName, RpcTarget target, params object[] parameters)
-        {
-            PhotonNetwork.RPC(this, methodName, target, false, parameters);
-        }
-
-        /// <summary>
-        /// Call a RPC method of this GameObject on remote clients of this room (or on all, including this client).
-        /// </summary>
-        /// <remarks>
-        /// [Remote Procedure Calls](@ref rpcManual) are an essential tool in making multiplayer games with PUN.
-        /// It enables you to make every client in a room call a specific method.
-        ///
-        /// RPC calls can target "All" or the "Others".
-        /// Usually, the target "All" gets executed locally immediately after sending the RPC.
-        /// The "*ViaServer" options send the RPC to the server and execute it on this client when it's sent back.
-        /// Of course, calls are affected by this client's lag and that of remote clients.
-        ///
-        /// Each call automatically is routed to the same PhotonView (and GameObject) that was used on the
-        /// originating client.
-        ///
-        /// See: [Remote Procedure Calls](@ref rpcManual).
-        /// </remarks>
-        ///<param name="methodName">The name of a fitting method that was has the RPC attribute.</param>
-        ///<param name="target">The group of targets and the way the RPC gets sent.</param>
-        ///<param name="encrypt"> </param>
-        ///<param name="parameters">The parameters that the RPC method has (must fit this call!).</param>
-        public void RpcSecure(string methodName, RpcTarget target, bool encrypt, params object[] parameters)
-        {
-            PhotonNetwork.RPC(this, methodName, target, encrypt, parameters);
-        }
-
-        /// <summary>
-        /// Call a RPC method of this GameObject on remote clients of this room (or on all, including this client).
-        /// </summary>
-        /// <remarks>
-        /// [Remote Procedure Calls](@ref rpcManual) are an essential tool in making multiplayer games with PUN.
-        /// It enables you to make every client in a room call a specific method.
-        ///
-        /// This method allows you to make an RPC calls on a specific player's client.
-        /// Of course, calls are affected by this client's lag and that of remote clients.
-        ///
-        /// Each call automatically is routed to the same PhotonView (and GameObject) that was used on the
-        /// originating client.
-        ///
-        /// See: [Remote Procedure Calls](@ref rpcManual).
-        /// </remarks>
-        /// <param name="methodName">The name of a fitting method that was has the RPC attribute.</param>
-        /// <param name="targetPlayer">The group of targets and the way the RPC gets sent.</param>
-        /// <param name="parameters">The parameters that the RPC method has (must fit this call!).</param>
-        public void RPC(string methodName, Player targetPlayer, params object[] parameters)
-        {
-            PhotonNetwork.RPC(this, methodName, targetPlayer, false, parameters);
-        }
-
-        /// <summary>
-        /// Call a RPC method of this GameObject on remote clients of this room (or on all, including this client).
-        /// </summary>
-        /// <remarks>
-        /// [Remote Procedure Calls](@ref rpcManual) are an essential tool in making multiplayer games with PUN.
-        /// It enables you to make every client in a room call a specific method.
-        ///
-        /// This method allows you to make an RPC calls on a specific player's client.
-        /// Of course, calls are affected by this client's lag and that of remote clients.
-        ///
-        /// Each call automatically is routed to the same PhotonView (and GameObject) that was used on the
-        /// originating client.
-        ///
-        /// See: [Remote Procedure Calls](@ref rpcManual).
-        /// </remarks>
-        ///<param name="methodName">The name of a fitting method that was has the RPC attribute.</param>
-        ///<param name="targetPlayer">The group of targets and the way the RPC gets sent.</param>
-        ///<param name="encrypt"> </param>
-        ///<param name="parameters">The parameters that the RPC method has (must fit this call!).</param>
-        public void RpcSecure(string methodName, Player targetPlayer, bool encrypt, params object[] parameters)
-        {
-            PhotonNetwork.RPC(this, methodName, targetPlayer, encrypt, parameters);
-        }
-
-        public static PhotonView Get(Component component)
-        {
-            return component.transform.GetParentComponent<PhotonView>();
-        }
-
-        public static PhotonView Get(GameObject gameObj)
-        {
-            return gameObj.transform.GetParentComponent<PhotonView>();
-        }
-
-        /// <summary>
-        /// Finds the PhotonView Component with a viewID in the scene
-        /// </summary>
-        /// <param name="viewID"></param>
-        /// <returns>The PhotonView with ViewID. Returns null if none found</returns>
-        public static PhotonView Find(int viewID)
-        {
-            return PhotonNetwork.GetPhotonView(viewID);
-        }
-
-        
-        #region Callback Interfaces
-
-
-        private struct CallbackTargetChange
-        {
-            public IPhotonViewCallback obj;
-            public Type type;
-            public bool add;
-
-            public CallbackTargetChange(IPhotonViewCallback obj, Type type, bool add)
-            {
-                this.obj = obj;
-                this.type = type;
-                this.add = add;
-            }
-        }
-
-        private Queue<CallbackTargetChange> CallbackChangeQueue = new Queue<CallbackTargetChange>();
-
-        private List<IOnPhotonViewPreNetDestroy> OnPreNetDestroyCallbacks;
-        private List<IOnPhotonViewOwnerChange> OnOwnerChangeCallbacks;
-        private List<IOnPhotonViewControllerChange> OnControllerChangeCallbacks;
-
-        /// <summary>
-        /// Add object to all applicable callback interfaces. Object must implement at least one IOnPhotonViewCallback derived interface.
-        /// </summary>
-        /// <param name="obj">An object that implements OnPhotonView callback interface(s).</param>
-        public void AddCallbackTarget(IPhotonViewCallback obj)
-        {
-            CallbackChangeQueue.Enqueue(new CallbackTargetChange(obj, null, true));
-        }
-
-        /// <summary>
-        /// Remove object from all applicable callback interfaces. Object must implement at least one IOnPhotonViewCallback derived interface.
-        /// </summary>
-        /// <param name="obj">An object that implements OnPhotonView callback interface(s).</param>
-        public void RemoveCallbackTarget(IPhotonViewCallback obj)
-        {
-            CallbackChangeQueue.Enqueue(new CallbackTargetChange(obj, null, false));
-        }
-
-        /// <summary>
-        /// Add object to this PhotonView's callback.
-        /// T is the IOnPhotonViewCallback derived interface you want added to its associated callback list.
-        /// Supplying IOnPhotonViewCallback (the interface base class) as T will add ALL implemented IOnPhotonViewCallback Interfaces found on the object.
-        /// </summary>
-        public void AddCallback<T>(IPhotonViewCallback obj) where T : class, IPhotonViewCallback
-        {
-            CallbackChangeQueue.Enqueue(new CallbackTargetChange(obj, typeof(T), true));
-        }
-
-        /// <summary>
-        /// Remove object from this PhotonView's callback list for T.
-        /// T is the IOnPhotonViewCallback derived interface you want removed from its associated callback list.
-        /// Supplying IOnPhotonViewCallback (the interface base class) as T will remove ALL implemented IOnPhotonViewCallback Interfaces found on the object.
-        /// </summary>
-        public void RemoveCallback<T>(IPhotonViewCallback obj) where T : class, IPhotonViewCallback
-        {
-            CallbackChangeQueue.Enqueue(new CallbackTargetChange(obj, typeof(T), false));
-        }
-
-        /// <summary>
-        /// Apply any queued add/remove of interfaces from the callback lists. Typically called before looping callback lists.
-        /// </summary>
-        private void UpdateCallbackLists()
-        {
-            while (CallbackChangeQueue.Count > 0)
-            {
-                var item = CallbackChangeQueue.Dequeue();
-                var obj = item.obj;
-                var type = item.type;
-                var add = item.add;
-
-                if (type == null)
-                {
-                    TryRegisterCallback(obj, ref OnPreNetDestroyCallbacks, add);
-                    TryRegisterCallback(obj, ref OnOwnerChangeCallbacks, add);
-                    TryRegisterCallback(obj, ref OnControllerChangeCallbacks, add);
-                }
-                else if (type == typeof(IOnPhotonViewPreNetDestroy))
-                    RegisterCallback(obj as IOnPhotonViewPreNetDestroy, ref OnPreNetDestroyCallbacks, add);
-
-                else if (type == typeof(IOnPhotonViewOwnerChange))
-                    RegisterCallback(obj as IOnPhotonViewOwnerChange, ref OnOwnerChangeCallbacks, add);
-
-                else if (type == typeof(IOnPhotonViewControllerChange))
-                    RegisterCallback(obj as IOnPhotonViewControllerChange, ref OnControllerChangeCallbacks, add);
-            }
-        }
-
-        private void TryRegisterCallback<T>(IPhotonViewCallback obj, ref List<T> list, bool add) where T : class, IPhotonViewCallback
-        {
-            T iobj = obj as T;
-            if (iobj != null)
-            {
-                RegisterCallback(iobj, ref list, add);
-            }
-        }
-
-        private void RegisterCallback<T>(T obj, ref List<T> list, bool add) where T : class, IPhotonViewCallback
-        {
-            if (ReferenceEquals(list, null))
-                list = new List<T>();
-
-            if (add)
-            {
-                if (!list.Contains(obj))
-                    list.Add(obj);
-            }
-            else
-            {
-                if (list.Contains(obj))
-                    list.Remove(obj);
-            }
-        }
-
-
-        #endregion Callback Interfaces
-
-
-        public override string ToString()
-        {
-            return string.Format("View {0}{3} on {1} {2}", this.ViewID, (this.gameObject != null) ? this.gameObject.name : "GO==null", (this.IsRoomView) ? "(scene)" : string.Empty, this.Prefix > 0 ? "lvl" + this.Prefix : "");
-        }
+    }
+
+
+    /// <summary>
+    /// Can be used to refesh the list of MonoBehaviours on this GameObject while PhotonNetwork.UseRpcMonoBehaviourCache is true.
+    /// </summary>
+    /// <remarks>
+    /// Set PhotonNetwork.UseRpcMonoBehaviourCache to true to enable the caching.
+    /// Uses this.GetComponents<MonoBehaviour>() to get a list of MonoBehaviours to call RPCs on (potentially).
+    ///
+    /// While PhotonNetwork.UseRpcMonoBehaviourCache is false, this method has no effect,
+    /// because the list is refreshed when a RPC gets called.
+    /// </remarks>
+    public void RefreshRpcMonoBehaviourCache()
+    {
+        this.RpcMonoBehaviours = this.GetComponents<MonoBehaviour>();
+    }
+
+
+    /// <summary>
+    /// Call a RPC method of this GameObject on remote clients of this room (or on all, inclunding this client).
+    /// </summary>
+    /// <remarks>
+    /// [Remote Procedure Calls](@ref rpcManual) are an essential tool in making multiplayer games with PUN.
+    /// It enables you to make every client in a room call a specific method.
+    ///
+    /// RPC calls can target "All" or the "Others".
+    /// Usually, the target "All" gets executed locally immediately after sending the RPC.
+    /// The "*ViaServer" options send the RPC to the server and execute it on this client when it's sent back.
+    /// Of course, calls are affected by this client's lag and that of remote clients.
+    ///
+    /// Each call automatically is routed to the same PhotonView (and GameObject) that was used on the
+    /// originating client.
+    ///
+    /// See: [Remote Procedure Calls](@ref rpcManual).
+    /// </remarks>
+    /// <param name="methodName">The name of a fitting method that was has the RPC attribute.</param>
+    /// <param name="target">The group of targets and the way the RPC gets sent.</param>
+    /// <param name="parameters">The parameters that the RPC method has (must fit this call!).</param>
+    public void RPC(string methodName, PhotonTargets target, params object[] parameters)
+    {
+        PhotonNetwork.RPC(this, methodName, target, false, parameters);
+    }
+
+    /// <summary>
+    /// Call a RPC method of this GameObject on remote clients of this room (or on all, inclunding this client).
+    /// </summary>
+    /// <remarks>
+    /// [Remote Procedure Calls](@ref rpcManual) are an essential tool in making multiplayer games with PUN.
+    /// It enables you to make every client in a room call a specific method.
+    ///
+    /// RPC calls can target "All" or the "Others".
+    /// Usually, the target "All" gets executed locally immediately after sending the RPC.
+    /// The "*ViaServer" options send the RPC to the server and execute it on this client when it's sent back.
+    /// Of course, calls are affected by this client's lag and that of remote clients.
+    ///
+    /// Each call automatically is routed to the same PhotonView (and GameObject) that was used on the
+    /// originating client.
+    ///
+    /// See: [Remote Procedure Calls](@ref rpcManual).
+    /// </remarks>
+    ///<param name="methodName">The name of a fitting method that was has the RPC attribute.</param>
+    ///<param name="target">The group of targets and the way the RPC gets sent.</param>
+    ///<param name="encrypt"> </param>
+    ///<param name="parameters">The parameters that the RPC method has (must fit this call!).</param>
+    public void RpcSecure(string methodName, PhotonTargets target, bool encrypt, params object[] parameters)
+    {
+        PhotonNetwork.RPC(this, methodName, target, encrypt, parameters);
+    }
+
+    /// <summary>
+    /// Call a RPC method of this GameObject on remote clients of this room (or on all, inclunding this client).
+    /// </summary>
+    /// <remarks>
+    /// [Remote Procedure Calls](@ref rpcManual) are an essential tool in making multiplayer games with PUN.
+    /// It enables you to make every client in a room call a specific method.
+    ///
+    /// This method allows you to make an RPC calls on a specific player's client.
+    /// Of course, calls are affected by this client's lag and that of remote clients.
+    ///
+    /// Each call automatically is routed to the same PhotonView (and GameObject) that was used on the
+    /// originating client.
+    ///
+    /// See: [Remote Procedure Calls](@ref rpcManual).
+    /// </remarks>
+    /// <param name="methodName">The name of a fitting method that was has the RPC attribute.</param>
+    /// <param name="targetPlayer">The group of targets and the way the RPC gets sent.</param>
+    /// <param name="parameters">The parameters that the RPC method has (must fit this call!).</param>
+    public void RPC(string methodName, PhotonPlayer targetPlayer, params object[] parameters)
+    {
+        PhotonNetwork.RPC(this, methodName, targetPlayer, false, parameters);
+    }
+
+    /// <summary>
+    /// Call a RPC method of this GameObject on remote clients of this room (or on all, inclunding this client).
+    /// </summary>
+    /// <remarks>
+    /// [Remote Procedure Calls](@ref rpcManual) are an essential tool in making multiplayer games with PUN.
+    /// It enables you to make every client in a room call a specific method.
+    ///
+    /// This method allows you to make an RPC calls on a specific player's client.
+    /// Of course, calls are affected by this client's lag and that of remote clients.
+    ///
+    /// Each call automatically is routed to the same PhotonView (and GameObject) that was used on the
+    /// originating client.
+    ///
+    /// See: [Remote Procedure Calls](@ref rpcManual).
+    /// </remarks>
+    ///<param name="methodName">The name of a fitting method that was has the RPC attribute.</param>
+    ///<param name="targetPlayer">The group of targets and the way the RPC gets sent.</param>
+    ///<param name="encrypt"> </param>
+    ///<param name="parameters">The parameters that the RPC method has (must fit this call!).</param>
+    public void RpcSecure(string methodName, PhotonPlayer targetPlayer, bool encrypt, params object[] parameters)
+    {
+        PhotonNetwork.RPC(this, methodName, targetPlayer, encrypt, parameters);
+    }
+
+    public static PhotonView Get(Component component)
+    {
+        return component.GetComponent<PhotonView>();
+    }
+
+    public static PhotonView Get(GameObject gameObj)
+    {
+        return gameObj.GetComponent<PhotonView>();
+    }
+
+    public static PhotonView Find(int viewID)
+    {
+        return PhotonNetwork.networkingPeer.GetPhotonView(viewID);
+    }
+
+    public override string ToString()
+    {
+        return string.Format("View ({3}){0} on {1} {2}", this.viewID, (this.gameObject != null) ? this.gameObject.name : "GO==null", (this.isSceneView) ? "(scene)" : string.Empty, this.prefix);
     }
 }

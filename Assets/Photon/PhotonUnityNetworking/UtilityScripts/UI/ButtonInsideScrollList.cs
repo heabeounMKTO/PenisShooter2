@@ -8,11 +8,13 @@
 // <author>developer@exitgames.com</author>
 // --------------------------------------------------------------------------------------------------------------------
 
+
 using UnityEngine;
+using System.Collections;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-namespace Photon.Pun.UtilityScripts
+namespace ExitGames.UtilityScripts
 {
 	/// <summary>
 	/// Button inside scroll list will stop scrolling ability of scrollRect container, so that when pressing down on a button and draggin up and down will not affect scrolling.

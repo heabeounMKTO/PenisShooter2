@@ -1,6 +1,6 @@
 // ----------------------------------------------------------------------------
 // <copyright file="ServerSettingsInspector.cs" company="Exit Games GmbH">
-//   PhotonNetwork Framework for Unity - Copyright (C) 2018 Exit Games GmbH
+//   PhotonNetwork Framework for Unity - Copyright (C) 2016 Exit Games GmbH
 // </copyright>
 // <summary>
 //   This is a custom editor for the ServerSettings scriptable object.
@@ -9,314 +9,378 @@
 // ----------------------------------------------------------------------------
 
 using System;
+using ExitGames.Client.Photon;
 using UnityEditor;
 using UnityEngine;
 
-using Photon.Pun;
 
-using ExitGames.Client.Photon;
-using System.Collections.Generic;
-using System.Reflection;
-using Photon.Realtime;
-
-namespace Photon.Pun
+[CustomEditor(typeof (ServerSettings))]
+public class ServerSettingsInspector : Editor
 {
-    [CustomEditor(typeof(ServerSettings))]
-    public class ServerSettingsInspector : Editor
+    private bool showMustHaveRegion;
+	private CloudRegionCode lastUsedRegion;
+    private ServerConnection lastServer;
+
+
+    public void OnEnable()
     {
-        private string versionPhoton;
+		this.lastUsedRegion = ServerSettings.BestRegionCodeInPreferences;
+		EditorApplication.update += this.OnUpdate;
+	}
 
-        private string[] regionsPrefsList;
 
-        private string prefLabel;
-        private const string notAvailableLabel = "n/a";
+	public void OnDisable()
+	{
+		EditorApplication.update -= this.OnUpdate;
+	}
 
-        private string rpcCrc;
-        private bool showRpcs;
 
-        private GUIStyle vertboxStyle;
+	private void OnUpdate()
+	{
+        if (this.lastUsedRegion != ServerSettings.BestRegionCodeInPreferences)
+		{
+            this.lastUsedRegion = ServerSettings.BestRegionCodeInPreferences;
+			Repaint();
+		}
+        // this won't repaint when we disconnect but it's "good enough" to update when we connect and switch servers.
+	    if (Application.isPlaying && this.lastServer != PhotonNetwork.Server)
+	    {
+	        this.lastServer = PhotonNetwork.Server;
+	        Repaint();
+	    }
+	}
 
-        public void Awake()
+
+    public override void OnInspectorGUI()
+    {
+        ServerSettings settings = (ServerSettings) target;
+        Undo.RecordObject(settings, "Edit PhotonServerSettings");
+        settings.HostType = (ServerSettings.HostingOption) EditorGUILayout.EnumPopup("Hosting", settings.HostType);
+        EditorGUI.indentLevel = 1;
+
+        switch (settings.HostType)
         {
-            this.versionPhoton = System.Reflection.Assembly.GetAssembly(typeof(PhotonPeer)).GetName().Version.ToString();
+            case ServerSettings.HostingOption.BestRegion:
+            case ServerSettings.HostingOption.PhotonCloud:
+                // region selection
+                if (settings.HostType == ServerSettings.HostingOption.PhotonCloud)
+                {
+                    settings.PreferredRegion = (CloudRegionCode)EditorGUILayout.EnumPopup("Region", settings.PreferredRegion);
+                }
+		else // Bestregion
+                {
+                    string _regionFeedback = "Prefs:"+ServerSettings.BestRegionCodeInPreferences.ToString();
+
+                    // the NameServer does not have a region itself. it's global (although it has regional instances)
+					if (PhotonNetwork.connected && PhotonNetwork.Server != ServerConnection.NameServer)
+					{
+					    _regionFeedback = "Current:" + PhotonNetwork.CloudRegion + " " + _regionFeedback;
+					}
+
+					EditorGUILayout.BeginHorizontal ();
+					EditorGUILayout.PrefixLabel (" ");
+					Rect rect = GUILayoutUtility.GetRect(new GUIContent(_regionFeedback),"Label");
+					int indentLevel = EditorGUI.indentLevel;
+					EditorGUI.indentLevel = 0;
+					EditorGUI.LabelField (rect, _regionFeedback);
+					EditorGUI.indentLevel = indentLevel;
+
+					rect.x += rect.width-39;
+					rect.width = 39;
+
+					rect.height -=2;
+					if (GUI.Button(rect,"Reset",EditorStyles.miniButton))
+					{
+						ServerSettings.ResetBestRegionCodeInPreferences();
+					}
+					EditorGUILayout.EndHorizontal ();
+
+
+				// Dashboard region settings
+				EditorGUILayout.BeginHorizontal ();
+				EditorGUILayout.PrefixLabel ("Regions");
+				Rect rect2 = GUILayoutUtility.GetRect(new GUIContent("Online WhiteList"),"Label");
+				if (!string.IsNullOrEmpty(settings.AppID))
+				{
+				int indentLevel2 = EditorGUI.indentLevel;
+				EditorGUI.indentLevel = 0;
+				EditorGUI.LabelField (rect2, "Online WhiteList");
+				EditorGUI.indentLevel = indentLevel2;
+
+				rect2.x += rect2.width-80;
+				rect2.width = 80;
+
+				rect2.height -=2;
+				if (GUI.Button(rect2,"Dashboard",EditorStyles.miniButton))
+				{
+					Application.OpenURL("https://www.photonengine.com/en-US/Dashboard/Manage/"+settings.AppID);
+				}
+				}else{
+					GUI.Label(rect2,"n/a");
+				}
+
+				EditorGUILayout.EndHorizontal ();
+
+
+				EditorGUI.indentLevel ++;
+				#if UNITY_2017_3_OR_NEWER
+				CloudRegionFlag valRegions = (CloudRegionFlag)EditorGUILayout.EnumFlagsField(" ", settings.EnabledRegions);
+				#else
+				CloudRegionFlag valRegions = (CloudRegionFlag)EditorGUILayout.EnumMaskField(" ", settings.EnabledRegions);
+				#endif
+
+                if (valRegions != settings.EnabledRegions)
+                {
+                    settings.EnabledRegions = valRegions;
+                    this.showMustHaveRegion = valRegions == 0;
+                }
+                if (this.showMustHaveRegion)
+                {
+                    EditorGUILayout.HelpBox("You should enable at least two regions for 'Best Region' hosting.", MessageType.Warning);
+                }
+
+				EditorGUI.indentLevel --;
+
+                }
+
+                // appid
+                string valAppId = EditorGUILayout.TextField("AppId", settings.AppID);
+                if (valAppId != settings.AppID)
+                {
+                    settings.AppID = valAppId.Trim();
+                }
+                if (!ServerSettings.IsAppId(settings.AppID))
+                {
+                    EditorGUILayout.HelpBox("PUN needs an AppId (GUID).\nFind it online in the Dashboard.", MessageType.Warning);
+                }
+
+                // protocol
+                ConnectionProtocol valProtocol = settings.Protocol;
+                valProtocol = (ConnectionProtocol) EditorGUILayout.EnumPopup("Protocol", valProtocol);
+                settings.Protocol = (ConnectionProtocol) valProtocol;
+
+                #if UNITY_WEBGL
+				if (valProtocol != ConnectionProtocol.WebSocket && valProtocol != ConnectionProtocol.WebSocketSecure)
+				{
+				EditorGUILayout.HelpBox("WebGL must use WebSockets as protocol. Please select WebSocket or WebSocket Secure Protocole.", MessageType.Warning);
+				}
+                #endif
+                break;
+
+		case ServerSettings.HostingOption.SelfHosted:
+                // address and port (depends on protocol below)
+			bool hidePort = false;
+			if (settings.Protocol == ConnectionProtocol.Udp && (settings.ServerPort == 4530 || settings.ServerPort == 0))
+			{
+				settings.ServerPort = 5055;
+			} else if (settings.Protocol == ConnectionProtocol.Tcp && (settings.ServerPort == 5055 || settings.ServerPort == 0))
+			{
+				settings.ServerPort = 4530;
+			}
+                #if RHTTP
+                if (settings.Protocol == ConnectionProtocol.RHttp)
+                {
+                    settings.ServerPort = 0;
+                    hidePort = true;
+                }
+                #endif
+			settings.ServerAddress = EditorGUILayout.TextField ("Server Address", settings.ServerAddress);
+			settings.ServerAddress = settings.ServerAddress.Trim ();
+			if (!hidePort)
+			{
+				settings.ServerPort = EditorGUILayout.IntField ("Server Port", settings.ServerPort);
+			}
+                // protocol
+			valProtocol = settings.Protocol;
+			valProtocol = (ConnectionProtocol)EditorGUILayout.EnumPopup ("Protocol", valProtocol);
+			settings.Protocol = (ConnectionProtocol)valProtocol;
+
+		
+                #if UNITY_WEBGL
+				if (valProtocol != ConnectionProtocol.WebSocket && valProtocol != ConnectionProtocol.WebSocketSecure)
+				{
+				EditorGUILayout.HelpBox("WebGL must use WebSockets as protocol. Please select WebSocket or WebSocket Secure Protocole.", MessageType.Warning);
+				}
+                #endif
+
+                // appid
+                settings.AppID = EditorGUILayout.TextField("AppId", settings.AppID);
+                settings.AppID = settings.AppID.Trim();
+                break;
+
+            case ServerSettings.HostingOption.OfflineMode:
+                EditorGUI.indentLevel = 0;
+                EditorGUILayout.HelpBox("In 'Offline Mode', the client does not communicate with a server.\nAll settings are hidden currently.", MessageType.Info);
+                break;
+
+            case ServerSettings.HostingOption.NotSet:
+                EditorGUI.indentLevel = 0;
+                EditorGUILayout.HelpBox("Hosting is 'Not Set'.\nConnectUsingSettings() will not be able to connect.\nSelect another option or run the PUN Wizard.", MessageType.Info);
+                break;
+
+            default:
+                DrawDefaultInspector();
+                break;
+        }
+
+        if (PhotonEditor.CheckPunPlus())
+        {
+            settings.Protocol = ConnectionProtocol.Udp;
+            EditorGUILayout.HelpBox("You seem to use PUN+.\nPUN+ only supports reliable UDP so the protocol is locked.", MessageType.Info);
         }
 
 
-        public override void OnInspectorGUI()
+
+        // CHAT SETTINGS
+        if (PhotonEditorUtils.HasChat)
         {
-            if (vertboxStyle == null)
-                vertboxStyle = new GUIStyle("HelpBox") { padding = new RectOffset(6, 6, 6, 6) };
-
-            SerializedObject sObj = new SerializedObject(this.target);
-            ServerSettings settings = this.target as ServerSettings;
-
-
-            EditorGUI.BeginChangeCheck();
-
-            #region Version Vertical Box
-
-            EditorGUILayout.BeginVertical(/*vertboxStyle*/);
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.PrefixLabel(new GUIContent("Version:", "Version of PUN and Photon3Unity3d.dll."));
-            GUILayout.FlexibleSpace();
-            var helpicorect = EditorGUILayout.GetControlRect(GUILayout.MaxWidth(16));
-            EditorGUIUtility.AddCursorRect(helpicorect, MouseCursor.Link);
-            if (GUI.Button(helpicorect, PhotonGUI.HelpIcon, GUIStyle.none))
+            GUILayout.Space(5);
+            EditorGUI.indentLevel = 0;
+            EditorGUILayout.LabelField("Photon Chat Settings");
+            EditorGUI.indentLevel = 1;
+            string valChatAppid = EditorGUILayout.TextField("Chat AppId", settings.ChatAppID);
+            if (valChatAppid != settings.ChatAppID)
             {
-                Application.OpenURL(PhotonEditor.UrlPunSettings);
+                settings.ChatAppID = valChatAppid.Trim();
             }
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.LabelField("Pun: " + PhotonNetwork.PunVersion + " Photon lib: " + this.versionPhoton);
-            EditorGUILayout.EndVertical();
-
-            #endregion Version Vertical Box
-
-            EditorGUI.indentLevel--;
-            SerializedProperty showSettingsProp = this.serializedObject.FindProperty("ShowSettings");
-            bool showSettings = showSettingsProp.Foldout(new GUIContent("Server/Cloud Settings", "Core Photon Server/Cloud settings."));
-            EditorGUI.indentLevel++;
-
-
-            if (showSettings != settings.ShowSettings)
+            if (!ServerSettings.IsAppId(settings.ChatAppID))
             {
-                showSettingsProp.boolValue = showSettings;
+                EditorGUILayout.HelpBox("Photon Chat needs an AppId (GUID).\nFind it online in the Dashboard.", MessageType.Warning);
             }
 
-            if (showSettingsProp.boolValue)
-            {
-                SerializedProperty settingsSp = this.serializedObject.FindProperty("AppSettings");
-
-                EditorGUI.indentLevel++;
-
-                //Realtime APP ID
-                this.BuildAppIdField(settingsSp.FindPropertyRelative("AppIdRealtime"), "App Id PUN");
-
-                if (PhotonEditorUtils.HasChat)
-                {
-                    this.BuildAppIdField(settingsSp.FindPropertyRelative("AppIdChat"));
-                }
-                if (PhotonEditorUtils.HasVoice)
-                {
-                    this.BuildAppIdField(settingsSp.FindPropertyRelative("AppIdVoice"));
-                }
-
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("AppVersion"));
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("UseNameServer"), new GUIContent("Use Name Server", "Photon Cloud requires this checked.\nUncheck for Photon Server SDK (OnPremise)."));
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("FixedRegion"), new GUIContent("Fixed Region", "Photon Cloud setting, needs a Name Server.\nDefine one region to always connect to.\nLeave empty to use the best region from a server-side region list."));
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("Server"), new GUIContent("Server", "Typically empty for Photon Cloud.\nFor Photon OnPremise, enter your host name or IP. Also uncheck \"Use Name Server\" for older Photon OnPremise servers."));
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("Port"), new GUIContent("Port", "Leave 0 to use default Photon Cloud ports for the Name Server.\nOnPremise defaults to 5055 for UDP and 4530 for TCP."));
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("ProxyServer"), new GUIContent("Proxy Server", "HTTP Proxy Server for WebSocket connection. See LoadBalancingClient.ProxyServerAddress for options."));
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("Protocol"), new GUIContent("Protocol", "Use UDP where possible.\nWSS works on WebGL and Xbox exports.\nDefine WEBSOCKET for use on other platforms."));
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("EnableProtocolFallback"), new GUIContent("Protocol Fallback", "Automatically try another network protocol, if initial connect fails.\nWill use default Name Server ports."));
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("EnableLobbyStatistics"), new GUIContent("Lobby Statistics", "When using multiple room lists (lobbies), the server can send info about their usage."));
-                EditorGUILayout.PropertyField(settingsSp.FindPropertyRelative("NetworkLogging"), new GUIContent("Network Logging", "Log level for the Photon libraries."));
-                EditorGUI.indentLevel--;
-            }
-
-            EditorGUILayout.PropertyField(this.serializedObject.FindProperty("PunLogging"), new GUIContent("PUN Logging", "Log level for the PUN layer."));
-            EditorGUILayout.PropertyField(this.serializedObject.FindProperty("EnableSupportLogger"), new GUIContent("Support Logger", "Logs additional info for debugging.\nUse this when you submit bugs to the Photon Team."));
-            EditorGUILayout.PropertyField(this.serializedObject.FindProperty("RunInBackground"), new GUIContent("Run In Background", "Enables apps to keep the connection without focus. Android and iOS ignore this."));
-            EditorGUILayout.PropertyField(this.serializedObject.FindProperty("StartInOfflineMode"), new GUIContent("Start In Offline Mode", "Simulates an online connection.\nPUN can be used as usual."));
-
-            EditorGUILayout.PropertyField(this.serializedObject.FindProperty("DevRegion"), new GUIContent("Dev Region", "Photon Cloud setting, needs a Name Server.\nDefine region the Editor and Development builds will always connect to - ensuring all users can find common rooms.\nLeave empty to use the Fixed Region or best region from a server-side region list. This value will be ignored for non-Development builds."));
-
-            #region Best Region Box
-
-            EditorGUILayout.BeginVertical(vertboxStyle);
-
-            if (!string.IsNullOrEmpty(PhotonNetwork.BestRegionSummaryInPreferences))
-            {
-                this.regionsPrefsList = PhotonNetwork.BestRegionSummaryInPreferences.Split(new[] {';'}, StringSplitOptions.RemoveEmptyEntries);
-                if (this.regionsPrefsList.Length < 2)
-                {
-                    this.prefLabel = notAvailableLabel;
-                }
-                else
-                {
-                    this.prefLabel = string.Format("'{0}' ping:{1}ms ", this.regionsPrefsList[0], this.regionsPrefsList[1]);
-                }
-            }
-            else
-            {
-                this.prefLabel = notAvailableLabel;
-            }
-
-            EditorGUILayout.LabelField(new GUIContent("Best Region Preference: " + prefLabel, "Best region is used if Fixed Region is empty."));
-
-            EditorGUILayout.BeginHorizontal();
-
-            var resetrect = EditorGUILayout.GetControlRect(GUILayout.MinWidth(64));
-            var editrect = EditorGUILayout.GetControlRect(GUILayout.MinWidth(64));
-            if (GUI.Button(resetrect, "Reset", EditorStyles.miniButton))
-            {
-                ServerSettings.ResetBestRegionCodeInPreferences();
-            }
-
-            if (GUI.Button(editrect, "Edit WhiteList", EditorStyles.miniButton))
-            {
-                Application.OpenURL("https://dashboard.photonengine.com/en-US/App/RegionsWhitelistEdit/" + PhotonNetwork.PhotonServerSettings.AppSettings.AppIdRealtime);
-
-            }
-
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.EndVertical();
-
-            #endregion Best Region Box
-
-
-            //this.showRpcs = EditorGUILayout.Foldout(this.showRpcs, new GUIContent("RPCs", "RPC shortcut list."));
-            EditorGUI.indentLevel--;
-            this.showRpcs = this.showRpcs.Foldout(new GUIContent("RPCs", "RPC shortcut list."));
-            EditorGUI.indentLevel++;
-
-            if (this.showRpcs)
-            {
-                // first time check to get the rpc has proper
-                if (string.IsNullOrEmpty(this.rpcCrc))
-                {
-                    this.rpcCrc = this.RpcListHashCode().ToString("X");
-                }
-
-                #region Begin Vertical Box CRC
-
-                EditorGUILayout.BeginVertical(vertboxStyle);
-
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.PrefixLabel("List CRC");
-
-                EditorGUI.indentLevel--;
-                var copyrect = EditorGUILayout.GetControlRect(GUILayout.MaxWidth(16));
-                EditorGUILayout.GetControlRect(GUILayout.MaxWidth(12));
-                var hashrect = EditorGUILayout.GetControlRect(GUILayout.MinWidth(16)); // new Rect(copyrect) { xMin = copyrect.xMin + 32 };
-
-                EditorGUIUtility.AddCursorRect(copyrect, MouseCursor.Link);
-                EditorGUI.LabelField(copyrect, new GUIContent("", "Copy Hashcode to Clipboard"));
-                if (GUI.Button(copyrect, PhotonGUI.CopyIcon, GUIStyle.none))
-                {
-                    Debug.Log("RPC-List HashCode copied into your ClipBoard: " + this.rpcCrc + ". Make sure clients that send each other RPCs have the same RPC-List.");
-                    EditorGUIUtility.systemCopyBuffer = this.rpcCrc;
-                }
-                EditorGUI.SelectableLabel(hashrect, this.rpcCrc);
-
-                EditorGUILayout.EndHorizontal();
-
-                EditorGUI.indentLevel++;
-
-                EditorGUILayout.BeginHorizontal();
-
-                var refreshrect = EditorGUILayout.GetControlRect(GUILayout.MinWidth(64));
-                var clearrect = EditorGUILayout.GetControlRect(GUILayout.MinWidth(64));
-
-                if (GUI.Button(refreshrect, "Refresh RPCs", EditorStyles.miniButton))
-                {
-                    PhotonEditor.UpdateRpcList();
-                    this.Repaint();
-                }
-
-                if (GUI.Button(clearrect, "Clear RPCs", EditorStyles.miniButton))
-                {
-                    PhotonEditor.ClearRpcList();
-                }
-
-                EditorGUILayout.EndHorizontal();
-
-                EditorGUILayout.EndVertical();
-
-                #endregion End Vertical Box CRC
-
-                EditorGUI.indentLevel++;
-
-                SerializedProperty sRpcs = sObj.FindProperty("RpcList");
-                EditorGUILayout.PropertyField(sRpcs, true);
-
-                EditorGUI.indentLevel--;
-            }
-
-            if (EditorGUI.EndChangeCheck())
-            {
-                sObj.ApplyModifiedProperties();
-                this.serializedObject.ApplyModifiedProperties();
-
-                // cache the rpc hash
-                this.rpcCrc = this.RpcListHashCode().ToString("X");
-            }
-
-            #region Simple Settings
-
-            /// Conditional Simple Sync Settings DrawGUI - Uses reflection to avoid having to hard connect the libraries
-            var SettingsScriptableObjectBaseType = GetType("Photon.Utilities.SettingsScriptableObjectBase");
-            if (SettingsScriptableObjectBaseType != null)
-            {
-                EditorGUILayout.GetControlRect(false, 3);
-
-                EditorGUILayout.LabelField("Simple Extension Settings", (GUIStyle)"BoldLabel");
-
-                var drawAllMethod = SettingsScriptableObjectBaseType.GetMethod("DrawAllSettings");
-
-                if (drawAllMethod != null && this != null)
-                {
-                    bool initializeAsOpen = false;
-                    drawAllMethod.Invoke(null, new object[2] { this, initializeAsOpen });
-
-                }
-            }
-
-
-            #endregion
+            EditorGUI.indentLevel = 0;
         }
 
-        private static Type GetType(string typeName)
+
+
+        // VOICE SETTINGS
+        if (PhotonEditorUtils.HasVoice)
         {
-            var type = Type.GetType(typeName);
-            if (type != null) return type;
-            foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+            GUILayout.Space(5);
+            EditorGUI.indentLevel = 0;
+            EditorGUILayout.LabelField("Photon Voice Settings");
+            EditorGUI.indentLevel = 1;
+            switch (settings.HostType)
             {
-                type = a.GetType(typeName);
-                if (type != null)
-                    return type;
+                case ServerSettings.HostingOption.BestRegion:
+                case ServerSettings.HostingOption.PhotonCloud:
+                    // voice appid
+                    string valVoiceAppId = EditorGUILayout.TextField("Voice AppId", settings.VoiceAppID);
+                    if (valVoiceAppId != settings.VoiceAppID)
+                    {
+                        settings.VoiceAppID = valVoiceAppId.Trim();
+                    }
+                    if (!ServerSettings.IsAppId(settings.VoiceAppID))
+                    {
+                        EditorGUILayout.HelpBox("Photon Voice needs an AppId (GUID).\nFind it online in the Dashboard.", MessageType.Warning);
+                    }
+                    break;
+                case ServerSettings.HostingOption.SelfHosted:
+                    if (settings.VoiceServerPort == 0)
+                    {
+                        settings.VoiceServerPort = 5055;
+                    }
+                    settings.VoiceServerPort = EditorGUILayout.IntField("Server Port UDP", settings.VoiceServerPort);
+                    break;
+                case ServerSettings.HostingOption.OfflineMode:
+                case ServerSettings.HostingOption.NotSet:
+                    break;
             }
-            return null;
+            EditorGUI.indentLevel = 0;
         }
 
-        private int RpcListHashCode()
+
+
+        // PUN Client Settings
+        GUILayout.Space(5);
+        EditorGUI.indentLevel = 0;
+        EditorGUILayout.LabelField("Client Settings");
+        EditorGUI.indentLevel = 1;
+        //EditorGUILayout.LabelField("game version");
+        settings.JoinLobby = EditorGUILayout.Toggle("Auto-Join Lobby", settings.JoinLobby);
+        settings.EnableLobbyStatistics = EditorGUILayout.Toggle("Enable Lobby Stats", settings.EnableLobbyStatistics);
+
+		// Pun Logging Level
+		PhotonLogLevel _PunLogging = (PhotonLogLevel)EditorGUILayout.EnumPopup("Pun Logging", settings.PunLogging);
+		if (EditorApplication.isPlaying && PhotonNetwork.logLevel!=_PunLogging)
+		{
+			PhotonNetwork.logLevel = _PunLogging;
+		}
+		settings.PunLogging = _PunLogging;
+
+		// Network Logging Level
+		DebugLevel _DebugLevel = (DebugLevel)EditorGUILayout.EnumPopup("Network Logging", settings.NetworkLogging);
+		if (EditorApplication.isPlaying && settings.NetworkLogging!=_DebugLevel)
+		{
+			settings.NetworkLogging = _DebugLevel;
+		}
+		settings.NetworkLogging = _DebugLevel;
+
+
+        //EditorGUILayout.LabelField("automaticallySyncScene");
+        //EditorGUILayout.LabelField("autoCleanUpPlayerObjects");
+        //EditorGUILayout.LabelField("lobby stats");
+        //EditorGUILayout.LabelField("sendrate / serialize rate");
+        //EditorGUILayout.LabelField("quick resends");
+        //EditorGUILayout.LabelField("max resends");
+        //EditorGUILayout.LabelField("enable crc checking");
+
+
+		// Application settings
+		GUILayout.Space(5);
+		EditorGUI.indentLevel = 0;
+		EditorGUILayout.LabelField("Build Settings");
+		EditorGUI.indentLevel = 1;
+
+		settings.RunInBackground = EditorGUILayout.Toggle("Run In Background", settings.RunInBackground);
+
+
+        // RPC-shortcut list
+        GUILayout.Space(5);
+        EditorGUI.indentLevel = 0;
+        SerializedObject sObj = new SerializedObject(target);
+        SerializedProperty sRpcs = sObj.FindProperty("RpcList");
+        EditorGUILayout.PropertyField(sRpcs, true);
+        sObj.ApplyModifiedProperties();
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Space(20);
+        if (GUILayout.Button("Refresh RPCs"))
         {
-            // this is a hashcode generated to (more) easily compare this Editor's RPC List with some other
-            int hashCode = PhotonNetwork.PhotonServerSettings.RpcList.Count + 1;
-            foreach (string s in PhotonNetwork.PhotonServerSettings.RpcList)
-            {
-                int h1 = s.GetHashCode();
-                hashCode = ((h1 << 5) + h1) ^ hashCode;
-            }
-            return hashCode;
+            PhotonEditor.UpdateRpcList();
+            Repaint();
+        }
+        if (GUILayout.Button("Clear RPCs"))
+        {
+            PhotonEditor.ClearRpcList();
+        }
+        if (GUILayout.Button("Log HashCode"))
+        {
+            Debug.Log("RPC-List HashCode: " + RpcListHashCode() + ". Make sure clients that send each other RPCs have the same RPC-List.");
+        }
+        GUILayout.Space(20);
+        GUILayout.EndHorizontal();
+
+
+        //SerializedProperty sp = serializedObject.FindProperty("RpcList");
+        //EditorGUILayout.PropertyField(sp, true);
+
+        if (GUI.changed)
+        {
+            EditorUtility.SetDirty(target);     // even in Unity 5.3+ it's OK to SetDirty() for non-scene objects.
+        }
+    }
+
+    private int RpcListHashCode()
+    {
+        // this is a hashcode generated to (more) easily compare this Editor's RPC List with some other
+        int hashCode = PhotonNetwork.PhotonServerSettings.RpcList.Count + 1;
+        foreach (string s in PhotonNetwork.PhotonServerSettings.RpcList)
+        {
+            int h1 = s.GetHashCode();
+            hashCode = ((h1 << 5) + h1) ^ hashCode;
         }
 
-        private void BuildAppIdField(SerializedProperty property, string label = null)
-        {
-            EditorGUILayout.BeginHorizontal();
-
-            if (label != null)
-            {
-                EditorGUILayout.PropertyField(property, new GUIContent(label), GUILayout.MinWidth(32));
-            }
-            else
-            {
-                EditorGUILayout.PropertyField(property, GUILayout.MinWidth(32));
-            }
-
-            property.stringValue = property.stringValue.Trim();
-            string appId = property.stringValue;
-
-            string url = "https://dashboard.photonengine.com/en-US/PublicCloud";
-
-            if (!string.IsNullOrEmpty(appId))
-            {
-                url = string.Format("https://dashboard.photonengine.com/en-US/App/Manage/{0}", appId);
-            }
-            if (GUILayout.Button("Dashboard", EditorStyles.miniButton, GUILayout.MinWidth(78), GUILayout.MaxWidth(78)))
-            {
-                Application.OpenURL(url);
-            }
-            EditorGUILayout.EndHorizontal();
-        }
+        return hashCode;
     }
 }

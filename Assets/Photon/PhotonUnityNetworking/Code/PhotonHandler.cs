@@ -1,401 +1,334 @@
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------------------------------------
 // <copyright file="PhotonHandler.cs" company="Exit Games GmbH">
-//   PhotonNetwork Framework for Unity - Copyright (C) 2018 Exit Games GmbH
+//   Part of: Photon Unity Networking
 // </copyright>
-// <summary>
-// PhotonHandler is a runtime MonoBehaviour to include PUN into the main loop.
-// </summary>
-// <author>developer@exitgames.com</author>
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------------------------------------
+
+using System;
+using System.Collections;
+using System.Diagnostics;
+using ExitGames.Client.Photon;
+using UnityEngine;
+using Debug = UnityEngine.Debug;
+using Hashtable = ExitGames.Client.Photon.Hashtable;
+using SupportClassPun = ExitGames.Client.Photon.SupportClass;
+
+#if UNITY_5_5_OR_NEWER
+using UnityEngine.Profiling;
+#endif
 
 
-namespace Photon.Pun
+#if UNITY_WEBGL
+#pragma warning disable 0649
+#endif
+
+/// <summary>
+/// Internal Monobehaviour that allows Photon to run an Update loop.
+/// </summary>
+internal class PhotonHandler : MonoBehaviour
 {
-    using System;
-    using System.Collections.Generic;
-    using ExitGames.Client.Photon;
-    using Photon.Realtime;
-    using UnityEngine;
-    using UnityEngine.Profiling;
+    public static PhotonHandler SP;
 
+    public int updateInterval;  // time [ms] between consecutive SendOutgoingCommands calls
+
+    public int updateIntervalOnSerialize;  // time [ms] between consecutive RunViewUpdate calls (sending syncs, etc)
+
+    private int nextSendTickCount = 0;
+
+    private int nextSendTickCountOnSerialize = 0;
+	
+    private static bool sendThreadShouldRun;
+
+    private static Stopwatch timerToStopConnectionInBackground;
+
+    protected internal static bool AppQuits;
+
+    protected internal static Type PingImplementation = null;
+
+    protected void Awake()
+    {
+        if (SP != null && SP != this && SP.gameObject != null)
+        {
+            GameObject.DestroyImmediate(SP.gameObject);
+        }
+
+        SP = this;
+        DontDestroyOnLoad(this.gameObject);
+
+        this.updateInterval = 1000 / PhotonNetwork.sendRate;
+        this.updateIntervalOnSerialize = 1000 / PhotonNetwork.sendRateOnSerialize;
+
+        PhotonHandler.StartFallbackSendAckThread();
+    }
+
+
+	#if UNITY_5_4_OR_NEWER
+
+    protected void Start()
+    {
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += (scene, loadingMode) =>
+        {
+            PhotonNetwork.networkingPeer.NewSceneLoaded();
+            PhotonNetwork.networkingPeer.SetLevelInPropsIfSynced(SceneManagerHelper.ActiveSceneName, false);
+			PhotonNetwork.networkingPeer.IsReloadingLevel = false;
+        };
+    }
+
+    #else
+
+    /// <summary>Called by Unity after a new level was loaded.</summary>
+    protected void OnLevelWasLoaded(int level)
+    {
+        PhotonNetwork.networkingPeer.NewSceneLoaded();
+        PhotonNetwork.networkingPeer.SetLevelInPropsIfSynced(SceneManagerHelper.ActiveSceneName, false);
+		PhotonNetwork.networkingPeer.IsReloadingLevel = false;
+		PhotonNetwork.networkingPeer.AsynchLevelLoadCall = false;
+    }
+
+    #endif
+
+
+    /// <summary>Called by Unity when the application is closed. Disconnects.</summary>
+    protected void OnApplicationQuit()
+    {
+        PhotonHandler.AppQuits = true;
+        PhotonHandler.StopFallbackSendAckThread();
+        PhotonNetwork.Disconnect();
+    }
 
     /// <summary>
-    /// Internal MonoBehaviour that allows Photon to run an Update loop.
+    /// Called by Unity when the application gets paused (e.g. on Android when in background).
     /// </summary>
-    public class PhotonHandler : ConnectionHandler, IInRoomCallbacks, IMatchmakingCallbacks
+    /// <remarks>
+    /// Sets a disconnect timer when PhotonNetwork.BackgroundTimeout > 0.1f. See PhotonNetwork.BackgroundTimeout.
+    ///
+    /// Some versions of Unity will give false values for pause on Android (and possibly on other platforms).
+    /// </remarks>
+    /// <param name="pause">If the app pauses.</param>
+    protected void OnApplicationPause(bool pause)
     {
-
-        private static PhotonHandler instance;
-        internal static PhotonHandler Instance
+        if (PhotonNetwork.BackgroundTimeout > 0.1f)
         {
-            get
+            if (timerToStopConnectionInBackground == null)
             {
-                if (instance == null)
-                {
-                    instance = FindObjectOfType<PhotonHandler>();
-                    if (instance == null)
-                    {
-                        GameObject obj = new GameObject();
-                        obj.name = "PhotonMono";
-                        instance = obj.AddComponent<PhotonHandler>();
-                    }
-                }
-
-                return instance;
+                timerToStopConnectionInBackground = new Stopwatch();
             }
-        }
+            timerToStopConnectionInBackground.Reset();
 
-
-        /// <summary>Limits the number of datagrams that are created in each LateUpdate.</summary>
-        /// <remarks>Helps spreading out sending of messages minimally.</remarks>
-        public static int MaxDatagrams = 3;
-
-        /// <summary>Signals that outgoing messages should be sent in the next LateUpdate call.</summary>
-        /// <remarks>Up to MaxDatagrams are created to send queued messages.</remarks>
-        public static bool SendAsap;
-
-        /// <summary>This corrects the "next time to serialize the state" value by some ms.</summary>
-        /// <remarks>As LateUpdate typically gets called every 15ms it's better to be early(er) than late to achieve a SerializeRate.</remarks>
-        private const int SerializeRateFrameCorrection = 8;
-
-        protected internal int UpdateInterval; // time [ms] between consecutive SendOutgoingCommands calls
-
-        protected internal int UpdateIntervalOnSerialize; // time [ms] between consecutive RunViewUpdate calls (sending syncs, etc)
-
-        private int nextSendTickCount;
-
-        private int nextSendTickCountOnSerialize;
-
-        private SupportLogger supportLoggerComponent;
-
-
-        protected override void Awake()
-        {
-            if (instance == null || ReferenceEquals(this, instance))
+            if (pause)
             {
-                instance = this;
-                base.Awake();
+                timerToStopConnectionInBackground.Start();
             }
             else
             {
-                Destroy(this);
-            }
-        }
-
-        protected virtual void OnEnable()
-        {
-            if (Instance != this)
-            {
-                Debug.LogError("PhotonHandler is a singleton but there are multiple instances. this != Instance.");
-                return;
-            }
-
-            this.Client = PhotonNetwork.NetworkingClient;
-
-            if (PhotonNetwork.PhotonServerSettings.EnableSupportLogger)
-            {
-                SupportLogger supportLogger = this.gameObject.GetComponent<SupportLogger>();
-                if (supportLogger == null)
-                {
-                    supportLogger = this.gameObject.AddComponent<SupportLogger>();
-                }
-                if (this.supportLoggerComponent != null)
-                {
-                    if (supportLogger.GetInstanceID() != this.supportLoggerComponent.GetInstanceID())
-                    {
-                        Debug.LogWarningFormat("Cached SupportLogger component is different from the one attached to PhotonMono GameObject");
-                    }
-                }
-                this.supportLoggerComponent = supportLogger;
-                this.supportLoggerComponent.Client = PhotonNetwork.NetworkingClient;
-            }
-
-            this.UpdateInterval = 1000 / PhotonNetwork.SendRate;
-            this.UpdateIntervalOnSerialize = 1000 / PhotonNetwork.SerializationRate;
-
-            PhotonNetwork.AddCallbackTarget(this);
-            this.StartFallbackSendAckThread();  // this is not done in the base class
-        }
-
-        protected void Start()
-        {
-            UnityEngine.SceneManagement.SceneManager.sceneLoaded += (scene, loadingMode) =>
-            {
-                PhotonNetwork.NewSceneLoaded();
-            };
-        }
-
-        protected override void OnDisable()
-        {
-            PhotonNetwork.RemoveCallbackTarget(this);
-            base.OnDisable();
-        }
-
-
-        /// <summary>Called in intervals by UnityEngine. Affected by Time.timeScale.</summary>
-        protected void FixedUpdate()
-        {
-            #if PUN_DISPATCH_IN_FIXEDUPDATE
-            this.Dispatch();
-            #elif PUN_DISPATCH_IN_LATEUPDATE
-            // do not dispatch here
-            #else
-            if (Time.timeScale > PhotonNetwork.MinimalTimeScaleToDispatchInFixedUpdate)
-            {
-                this.Dispatch();
-            }
-            #endif
-        }
-
-        /// <summary>Called in intervals by UnityEngine, after running the normal game code and physics.</summary>
-        protected void LateUpdate()
-        {
-            #if PUN_DISPATCH_IN_LATEUPDATE
-            this.Dispatch();
-            #elif PUN_DISPATCH_IN_FIXEDUPDATE
-            // do not dispatch here
-            #else
-            // see MinimalTimeScaleToDispatchInFixedUpdate and FixedUpdate for explanation:
-            if (Time.timeScale <= PhotonNetwork.MinimalTimeScaleToDispatchInFixedUpdate)
-            {
-                this.Dispatch();
-            }
-            #endif
-
-            int currentMsSinceStart = (int)(Time.realtimeSinceStartup * 1000); // avoiding Environment.TickCount, which could be negative on long-running platforms
-            if (PhotonNetwork.IsMessageQueueRunning && currentMsSinceStart > this.nextSendTickCountOnSerialize)
-            {
-                PhotonNetwork.RunViewUpdate();
-                this.nextSendTickCountOnSerialize = currentMsSinceStart + this.UpdateIntervalOnSerialize - SerializeRateFrameCorrection;
-                this.nextSendTickCount = 0; // immediately send when synchronization code was running
-            }
-
-            currentMsSinceStart = (int)(Time.realtimeSinceStartup * 1000);
-            if (SendAsap || currentMsSinceStart > this.nextSendTickCount)
-            {
-                SendAsap = false;
-                bool doSend = true;
-                int sendCounter = 0;
-                while (PhotonNetwork.IsMessageQueueRunning && doSend && sendCounter < MaxDatagrams)
-                {
-                    // Send all outgoing commands
-                    Profiler.BeginSample("SendOutgoingCommands");
-                    doSend = PhotonNetwork.NetworkingClient.LoadBalancingPeer.SendOutgoingCommands();
-                    sendCounter++;
-                    Profiler.EndSample();
-                }
-
-                this.nextSendTickCount = currentMsSinceStart + this.UpdateInterval;
-            }
-        }
-
-        /// <summary>Dispatches incoming network messages for PUN. Called in FixedUpdate or LateUpdate.</summary>
-        /// <remarks>
-        /// It may make sense to dispatch incoming messages, even if the timeScale is near 0.
-        /// That can be configured with PhotonNetwork.MinimalTimeScaleToDispatchInFixedUpdate.
-        ///
-        /// Without dispatching messages, PUN won't change state and does not handle updates.
-        /// </remarks>
-        protected void Dispatch()
-        {
-            if (PhotonNetwork.NetworkingClient == null)
-            {
-                Debug.LogError("NetworkPeer broke!");
-                return;
-            }
-
-            //if (PhotonNetwork.NetworkClientState == ClientState.PeerCreated || PhotonNetwork.NetworkClientState == ClientState.Disconnected || PhotonNetwork.OfflineMode)
-            //{
-            //    return;
-            //}
-
-
-            bool doDispatch = true;
-            Exception ex = null;
-            int exceptionCount = 0;
-            while (PhotonNetwork.IsMessageQueueRunning && doDispatch)
-            {
-                // DispatchIncomingCommands() returns true of it dispatched any command (event, response or state change)
-                Profiler.BeginSample("DispatchIncomingCommands");
-                try
-                {
-                    doDispatch = PhotonNetwork.NetworkingClient.LoadBalancingPeer.DispatchIncomingCommands();
-                }
-                catch (Exception e)
-                {
-                    exceptionCount++;
-                    if (ex == null)
-                    {
-                        ex = e;
-                    }
-                }
-
-                Profiler.EndSample();
-            }
-
-            if (ex != null)
-            {
-                throw new AggregateException("Caught " + exceptionCount + " exception(s) in methods called by DispatchIncomingCommands(). Rethrowing first only (see above).", ex);
-            }
-        }
-
-
-        public void OnCreatedRoom()
-        {
-            PhotonNetwork.SetLevelInPropsIfSynced(SceneManagerHelper.ActiveSceneName);
-        }
-
-        public void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged)
-        {
-            PhotonNetwork.LoadLevelIfSynced();
-        }
-
-
-        public void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps) { }
-
-        public void OnMasterClientSwitched(Player newMasterClient)
-        {
-            var views = PhotonNetwork.PhotonViewCollection;
-            foreach (var view in views)
-            {
-                if (view.IsRoomView)
-                {
-                    view.OwnerActorNr= newMasterClient.ActorNumber;
-                    view.ControllerActorNr = newMasterClient.ActorNumber;
-                }
-            }
-        }
-
-        public void OnFriendListUpdate(System.Collections.Generic.List<FriendInfo> friendList) { }
-
-        public void OnCreateRoomFailed(short returnCode, string message) { }
-
-        public void OnJoinRoomFailed(short returnCode, string message) { }
-
-        public void OnJoinRandomFailed(short returnCode, string message) { }
-
-        protected List<int> reusableIntList = new List<int>();
-
-        public void OnJoinedRoom()
-        {
-
-            if (PhotonNetwork.ViewCount == 0)
-                return;
-
-            var views = PhotonNetwork.PhotonViewCollection;
-
-            bool amMasterClient = PhotonNetwork.IsMasterClient;
-            bool amRejoiningMaster = amMasterClient && PhotonNetwork.CurrentRoom.PlayerCount > 1;
-
-            if (amRejoiningMaster)
-                reusableIntList.Clear();
-
-            // If this is the master rejoining, reassert ownership of non-creator owners
-            foreach (var view in views)
-            {
-                int viewOwnerId = view.OwnerActorNr;
-                int viewCreatorId = view.CreatorActorNr;
-
-                // on join / rejoin, assign control to either the Master Client (for room objects) or the owner (for anything else)
-                    view.RebuildControllerCache();
-
-                // Rejoining master should enforce its world view, and override any changes that happened while it was soft disconnected
-                if (amRejoiningMaster)
-                    if (viewOwnerId != viewCreatorId)
-                    {
-                        reusableIntList.Add(view.ViewID);
-                        reusableIntList.Add(viewOwnerId);
-                    }
-            }
-
-            if (amRejoiningMaster && reusableIntList.Count > 0)
-            {
-                PhotonNetwork.OwnershipUpdate(reusableIntList.ToArray());
-            }
-        }
-
-        public void OnLeftRoom()
-        {
-            // Destroy spawned objects and reset scene objects
-            PhotonNetwork.LocalCleanupAnythingInstantiated(true);
-        }
-
-
-        public void OnPlayerEnteredRoom(Player newPlayer)
-        {
-            // note: if the master client becomes inactive, someone else becomes master. so there is no case where the active master client reconnects
-            // what may happen is that the Master Client disconnects locally and uses ReconnectAndRejoin before anyone (including the server) notices.
-
-            bool amMasterClient = PhotonNetwork.IsMasterClient;
-
-            var views = PhotonNetwork.PhotonViewCollection;
-            if (amMasterClient)
-            {
-                reusableIntList.Clear();
-            }
-
-            foreach (var view in views)
-            {
-                view.RebuildControllerCache();  // all clients will potentially have to clean up owner and controller, if someone re-joins
-
-                // the master client notifies joining players of any non-creator ownership
-                if (amMasterClient)
-                {
-                    int viewOwnerId = view.OwnerActorNr;
-                    if (viewOwnerId != view.CreatorActorNr)
-                    {
-                        reusableIntList.Add(view.ViewID);
-                        reusableIntList.Add(viewOwnerId);
-                    }
-                }
-            }
-
-            // update the joining player of non-creator ownership in the room
-            if (amMasterClient && reusableIntList.Count > 0)
-            {
-                PhotonNetwork.OwnershipUpdate(reusableIntList.ToArray(), newPlayer.ActorNumber);
-            }
-
-        }
-
-        public void OnPlayerLeftRoom(Player otherPlayer)
-        {
-            var views = PhotonNetwork.PhotonViewCollection;
-
-            int leavingPlayerId = otherPlayer.ActorNumber;
-            bool isInactive = otherPlayer.IsInactive;
-
-            // SOFT DISCONNECT: A player has timed out to the relay but has not yet exceeded PlayerTTL and may reconnect.
-            // Master will take control of this objects until the player hard disconnects, or returns.
-            if (isInactive)
-            {
-                foreach (var view in views)
-                {
-                    // v2.27: changed from owner-check to controller-check
-                    if (view.ControllerActorNr == leavingPlayerId)
-                        view.ControllerActorNr = PhotonNetwork.MasterClient.ActorNumber;
-                }
-
-            }
-            // HARD DISCONNECT: Player permanently removed. Remove that actor as owner for all items they created (Unless AutoCleanUp is false)
-            else
-            {
-                bool autocleanup = PhotonNetwork.CurrentRoom.AutoCleanUp;
-
-                foreach (var view in views)
-                {
-                    // Skip changing Owner/Controller for items that will be cleaned up.
-                    if (autocleanup && view.CreatorActorNr == leavingPlayerId)
-                        continue;
-
-                    // Any views owned by the leaving player, default to null owner (which will become master controlled).
-                    if (view.OwnerActorNr == leavingPlayerId || view.ControllerActorNr == leavingPlayerId)
-                    {
-                        view.OwnerActorNr = 0;
-                        view.ControllerActorNr = PhotonNetwork.MasterClient.ActorNumber;
-                    }
-                }
+                timerToStopConnectionInBackground.Stop();
             }
         }
     }
+
+    /// <summary>Called by Unity when the play mode ends. Used to cleanup.</summary>
+    protected void OnDestroy()
+    {
+        //Debug.Log("OnDestroy on PhotonHandler.");
+        PhotonHandler.StopFallbackSendAckThread();
+        //PhotonNetwork.Disconnect();
+    }
+
+    protected void Update()
+    {
+        if (PhotonNetwork.networkingPeer == null)
+        {
+            Debug.LogError("NetworkPeer broke!");
+            return;
+        }
+
+        if (PhotonNetwork.connectionStateDetailed == ClientState.PeerCreated || PhotonNetwork.connectionStateDetailed == ClientState.Disconnected || PhotonNetwork.offlineMode)
+        {
+            return;
+        }
+
+        // the messageQueue might be paused. in that case a thread will send acknowledgements only. nothing else to do here.
+        if (!PhotonNetwork.isMessageQueueRunning)
+        {
+            return;
+        }
+
+        bool doDispatch = true;
+        while (PhotonNetwork.isMessageQueueRunning && doDispatch)
+        {
+            // DispatchIncomingCommands() returns true of it found any command to dispatch (event, result or state change)
+            Profiler.BeginSample("DispatchIncomingCommands");
+            doDispatch = PhotonNetwork.networkingPeer.DispatchIncomingCommands();
+            Profiler.EndSample();
+        }
+
+        int currentMsSinceStart = (int)(Time.realtimeSinceStartup * 1000);  // avoiding Environment.TickCount, which could be negative on long-running platforms
+        if (PhotonNetwork.isMessageQueueRunning && currentMsSinceStart > this.nextSendTickCountOnSerialize)
+        {
+            PhotonNetwork.networkingPeer.RunViewUpdate();
+            this.nextSendTickCountOnSerialize = currentMsSinceStart + this.updateIntervalOnSerialize;
+            this.nextSendTickCount = 0;     // immediately send when synchronization code was running
+        }
+
+        currentMsSinceStart = (int)(Time.realtimeSinceStartup * 1000);
+        if (currentMsSinceStart > this.nextSendTickCount)
+        {
+            bool doSend = true;
+            while (PhotonNetwork.isMessageQueueRunning && doSend)
+            {
+                // Send all outgoing commands
+                Profiler.BeginSample("SendOutgoingCommands");
+                doSend = PhotonNetwork.networkingPeer.SendOutgoingCommands();
+                Profiler.EndSample();
+            }
+
+            this.nextSendTickCount = currentMsSinceStart + this.updateInterval;
+        }
+    }
+
+    protected void OnJoinedRoom()
+    {
+        PhotonNetwork.networkingPeer.LoadLevelIfSynced();
+    }
+
+    protected void OnCreatedRoom()
+    {
+        PhotonNetwork.networkingPeer.SetLevelInPropsIfSynced(SceneManagerHelper.ActiveSceneName, false);
+    }
+
+    public static void StartFallbackSendAckThread()
+    {
+	    #if !UNITY_WEBGL
+        if (sendThreadShouldRun)
+        {
+            return;
+        }
+
+        sendThreadShouldRun = true;
+        SupportClassPun.StartBackgroundCalls(FallbackSendAckThread);   // thread will call this every 100ms until method returns false
+	    #endif
+    }
+
+    public static void StopFallbackSendAckThread()
+    {
+	    #if !UNITY_WEBGL
+        sendThreadShouldRun = false;
+	    #endif
+    }
+
+    /// <summary>A thread which runs independent from the Update() calls. Keeps connections online while loading or in background. See PhotonNetwork.BackgroundTimeout.</summary>
+    public static bool FallbackSendAckThread()
+    {
+        if (sendThreadShouldRun && !PhotonNetwork.offlineMode && PhotonNetwork.networkingPeer != null)
+        {
+            // check if the client should disconnect after some seconds in background
+            if (timerToStopConnectionInBackground != null && PhotonNetwork.BackgroundTimeout > 0.1f)
+            {
+                if (timerToStopConnectionInBackground.ElapsedMilliseconds > PhotonNetwork.BackgroundTimeout * 1000)
+                {
+                    if (PhotonNetwork.connected)
+                    {
+                        PhotonNetwork.Disconnect();
+                    }
+                    timerToStopConnectionInBackground.Stop();
+                    timerToStopConnectionInBackground.Reset();
+                    return sendThreadShouldRun;
+                }
+            }
+
+            if (!PhotonNetwork.isMessageQueueRunning || PhotonNetwork.networkingPeer.ConnectionTime - PhotonNetwork.networkingPeer.LastSendOutgoingTime > 200)
+            {
+                PhotonNetwork.networkingPeer.SendAcksOnly();
+            }
+        }
+
+        return sendThreadShouldRun;
+    }
+
+
+    #region Photon Cloud Ping Evaluation
+
+
+    private const string PlayerPrefsKey = "PUNCloudBestRegion";
+
+    internal static CloudRegionCode BestRegionCodeInPreferences
+    {
+        get
+        {
+            string prefsRegionCode = PlayerPrefs.GetString(PlayerPrefsKey, "");
+            if (!string.IsNullOrEmpty(prefsRegionCode))
+            {
+                CloudRegionCode loadedRegion = Region.Parse(prefsRegionCode);
+                return loadedRegion;
+            }
+
+            return CloudRegionCode.none;
+        }
+        set
+        {
+            if (value == CloudRegionCode.none)
+            {
+                PlayerPrefs.DeleteKey(PlayerPrefsKey);
+            }
+            else
+            {
+                PlayerPrefs.SetString(PlayerPrefsKey, value.ToString());
+            }
+        }
+    }
+
+
+    internal protected static void PingAvailableRegionsAndConnectToBest()
+    {
+        SP.StartCoroutine(SP.PingAvailableRegionsCoroutine(true));
+    }
+
+
+    internal IEnumerator PingAvailableRegionsCoroutine(bool connectToBest)
+    {
+        while (PhotonNetwork.networkingPeer.AvailableRegions == null)
+        {
+            if (PhotonNetwork.connectionStateDetailed != ClientState.ConnectingToNameServer && PhotonNetwork.connectionStateDetailed != ClientState.ConnectedToNameServer)
+            {
+                Debug.LogError("Call ConnectToNameServer to ping available regions.");
+                yield break; // break if we don't connect to the nameserver at all
+            }
+
+            Debug.Log("Waiting for AvailableRegions. State: " + PhotonNetwork.connectionStateDetailed + " Server: " + PhotonNetwork.Server + " PhotonNetwork.networkingPeer.AvailableRegions " + (PhotonNetwork.networkingPeer.AvailableRegions != null));
+            yield return new WaitForSeconds(0.25f); // wait until pinging finished (offline mode won't ping)
+        }
+
+        if (PhotonNetwork.networkingPeer.AvailableRegions == null || PhotonNetwork.networkingPeer.AvailableRegions.Count == 0)
+        {
+            Debug.LogError("No regions available. Are you sure your appid is valid and setup?");
+            yield break; // break if we don't get regions at all
+        }
+
+        PhotonPingManager pingManager = new PhotonPingManager();
+        foreach (Region region in PhotonNetwork.networkingPeer.AvailableRegions)
+        {
+            SP.StartCoroutine(pingManager.PingSocket(region));
+        }
+
+        while (!pingManager.Done)
+        {
+            yield return new WaitForSeconds(0.1f); // wait until pinging finished (offline mode won't ping)
+        }
+
+
+        Region best = pingManager.BestRegion;
+        PhotonHandler.BestRegionCodeInPreferences = best.Code;
+
+        Debug.Log("Found best region: '" + best.Code + "' ping: " + best.Ping + ". Calling ConnectToRegionMaster() is: " + connectToBest);
+
+        if (connectToBest)
+        {
+            PhotonNetwork.networkingPeer.ConnectToRegionMaster(best.Code);
+        }
+    }
+
+
+
+    #endregion
+
 }

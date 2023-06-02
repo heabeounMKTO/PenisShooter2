@@ -1,56 +1,42 @@
-// --------------------------------------------------------------------------------------------------------------------
-// <copyright file="OnClickInstantiate.cs" company="Exit Games GmbH">
-// Part of: Photon Unity Utilities
-// </copyright>
-// <summary>A compact script for prototyping.</summary>
-// <author>developer@exitgames.com</author>
-// --------------------------------------------------------------------------------------------------------------------
+using UnityEngine;
+using System.Collections;
 
-
-namespace Photon.Pun.UtilityScripts
+public class OnClickInstantiate : MonoBehaviour
 {
-    using UnityEngine;
-    using UnityEngine.EventSystems;
+    public GameObject Prefab;
+    public int InstantiateType;
+    private string[] InstantiateTypeNames = {"Mine", "Scene"};
 
+    public bool showGui;
 
-    /// <summary>
-    /// Instantiates a networked GameObject on click.
-    /// </summary>
-    /// <remarks>
-    /// Gets OnClick() calls by Unity's IPointerClickHandler. Needs a PhysicsRaycaster on the camera.
-    /// See: https://docs.unity3d.com/ScriptReference/EventSystems.IPointerClickHandler.html
-    /// </remarks>
-    public class OnClickInstantiate : MonoBehaviour, IPointerClickHandler
+    void OnClick()
     {
-        public enum InstantiateOption { Mine, Scene }
-
-
-        public PointerEventData.InputButton Button;
-        public KeyCode ModifierKey;
-
-        public GameObject Prefab;
-
-        [SerializeField]
-		private InstantiateOption InstantiateType = InstantiateOption.Mine;
-
-
-        void IPointerClickHandler.OnPointerClick(PointerEventData eventData)
+        if (!PhotonNetwork.inRoom)
         {
-            if (!PhotonNetwork.InRoom || (this.ModifierKey != KeyCode.None && !Input.GetKey(this.ModifierKey)) || eventData.button != this.Button)
-            {
-                return;
-            }
+            // only use PhotonNetwork.Instantiate while in a room.
+            return;
+        }
 
-
-            switch (this.InstantiateType)
-            {
-                case InstantiateOption.Mine:
-                    PhotonNetwork.Instantiate(this.Prefab.name, eventData.pointerCurrentRaycast.worldPosition + new Vector3(0, 0.5f, 0), Quaternion.identity, 0);
-                    break;
-                case InstantiateOption.Scene:
-                    PhotonNetwork.InstantiateRoomObject(this.Prefab.name, eventData.pointerCurrentRaycast.worldPosition + new Vector3(0, 0.5f, 0), Quaternion.identity, 0, null);
-                    break;
-            }
+        switch (InstantiateType)
+        {
+            case 0:
+                PhotonNetwork.Instantiate(Prefab.name, InputToEvent.inputHitPos + new Vector3(0, 5f, 0), Quaternion.identity, 0);
+                break;
+            case 1:
+                PhotonNetwork.InstantiateSceneObject(Prefab.name, InputToEvent.inputHitPos + new Vector3(0, 5f, 0), Quaternion.identity, 0, null);
+                break;
         }
     }
+
+    void OnGUI()
+    {
+        if (showGui)
+        {
+            GUILayout.BeginArea(new Rect(Screen.width - 180, 0, 180, 50));
+            InstantiateType = GUILayout.Toolbar(InstantiateType, InstantiateTypeNames);
+            GUILayout.EndArea();
+        }
+    }
+
+
 }
